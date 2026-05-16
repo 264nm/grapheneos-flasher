@@ -1,0 +1,94 @@
+[project]
+name = "grapheneos-flasher"
+version = "1.0.0"
+description = "Automated GrapheneOS flashing with security verification"
+readme = "README.md"
+authors = [
+    {name = "Developer Name", email = "developer@example.com"}
+]
+license = {text = "MIT"}
+requires-python = ">=3.14"
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Topic :: System :: Installation/Setup",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.14",
+    "Operating System :: OS Independent",
+]
+dependencies = []
+
+[project.scripts]
+grapheneos-flasher = "grapheneos_flasher.cli:main"
+
+[project.urls]
+"Homepage" = "https://github.com/yourusername/grapheneos-flasher"
+"Bug Tracker" = "https://github.com/yourusername/grapheneos-flasher/issues"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-cov>=4.0.0",
+    "pytest-mock>=3.0.0",
+    "mypy>=1.0.0",
+    "black>=24.0.0",
+    "isort>=5.0.0",
+    "flake8>=7.0.0",
+    "types-requests>=2.0.0",
+]
+
+[tool.black]
+line-length = 88
+target-version = ['py314']
+
+[tool.isort]
+profile = "black"
+line_length = 88
+
+[tool.mypy]
+python_version = "3.14"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+disallow_untyped_decorators = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_no_return = true
+warn_unreachable = true
+strict_equality = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = "-ra -q --strict-markers --strict-config"
+markers = [
+    "integration: integration tests that require network or system tools",
+    "unit: unit tests that run in isolation",
+]
+
+[tool.coverage.run]
+source = ["grapheneos_flasher"]
+omit = [
+    "*/tests/*",
+    "*/test_*",
+    "*/__pycache__/*",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+]
