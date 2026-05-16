@@ -27,10 +27,9 @@ def _rule(char: str = "─") -> str:
     return char * _W
 
 
-def _section(title: str) -> None:
-    print(f"\n{_rule()}")
-    print(f"  {title}")
-    print(_rule())
+def _block(text: str) -> None:
+    """Print a pre-formatted multi-line instruction block (one print call)."""
+    print(text.strip("\n"))
 
 
 def _ok(msg: str) -> None:
@@ -50,9 +49,7 @@ def _warn(msg: str) -> None:
 
 
 def _step(n: int, total: int, title: str) -> None:
-    print(f"\n{_rule()}")
-    print(f"  Step {n}/{total} — {title}")
-    print(_rule())
+    print(f"\n{_rule()}\n  Step {n}/{total} — {title}\n{_rule()}")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -141,12 +138,16 @@ class DefaultFileHandler(FileHandler):
         except urllib.error.HTTPError as e:
             _fail(f"HTTP {e.code} — could not download {filename}")
             if e.code == 404:
-                print("       The version or device codename may not exist.")
-                print("       Check: https://grapheneos.org/releases")
+                _block("""
+       The version or device codename may not exist.
+       Check: https://grapheneos.org/releases
+""")
             return False
         except urllib.error.URLError as e:
             _fail(f"Network error downloading {filename}: {e.reason}")
-            print("       Check your internet connection and try again.")
+            _block("""
+       Check your internet connection and try again.
+""")
             return False
 
     def extract_archive(self, archive_path: Path, destination: Path) -> bool:
@@ -211,25 +212,138 @@ class SecurityVerifier:
             if result.returncode == 0:
                 _ok("Signature is valid — files are authentic and unmodified")
                 return True
-            else:
-                _fail("Signature verification FAILED")
-                print()
-                print("  This means the downloaded files may be corrupted or tampered with.")
-                print("  Do NOT flash these images.")
-                print()
-                if result.stderr.strip():
-                    print(f"  ssh-keygen output: {result.stderr.strip()}")
-                return False
+
+            _fail("Signature verification FAILED")
+            _block(f"""
+  The downloaded files may be corrupted or tampered with.
+  Do NOT flash these images.
+{"  ssh-keygen: " + result.stderr.strip() if result.stderr.strip() else ""}
+""")
+            return False
 
         except FileNotFoundError:
             _fail("'ssh-keygen' not found")
-            print()
-            print("  OpenSSH is required for signature verification.")
-            print("  Install it with your package manager:")
-            print("    macOS  : built-in (update macOS if missing)")
-            print("    Debian : sudo apt install openssh-client")
-            print("    Arch   : sudo pacman -S openssh")
+            _block("""
+  OpenSSH is required for signature verification.
+  Install it with your package manager:
+    macOS  : built-in (update macOS if missing)
+    Debian : sudo apt install openssh-client
+    Arch   : sudo pacman -S openssh
+""")
             return False
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Instruction blocks
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _pre_flash_checklist() -> str:
+    return f"""
+{"═" * _W}
+  ⚠   PRE-FLASH CHECKLIST — complete ALL steps before continuing
+{"═" * _W}
+
+  You must do the following on your device BEFORE flashing:
+
+  1. Enable Developer Options
+     Settings → About phone → tap 'Build number' 7 times
+
+  2. Enable OEM Unlocking
+     Settings → Developer Options → OEM unlocking → ON
+
+  3. Boot into Fastboot Mode
+     Power off → hold Volume Down + press Power
+     (or from your computer: adb reboot bootloader)
+
+  4. Unlock the bootloader
+     ⚠   This WIPES ALL DATA — back up first!
+     Run: fastboot flashing unlock
+     Confirm the prompt shown on your device screen.
+
+  5. Connect device directly to your computer (no USB hubs)
+
+{"─" * _W}
+  ⚠   FLASHING WILL ERASE EVERYTHING on the device.
+{"─" * _W}
+"""
+
+
+def _post_flash_instructions() -> str:
+    return f"""
+{"═" * _W}
+  ✅  GrapheneOS installed successfully!
+{"═" * _W}
+
+  ⚠   CRITICAL NEXT STEP — lock the bootloader now.
+  Your device is still in Fastboot Mode. Run:
+
+    fastboot flashing lock
+
+  Confirm the prompt on your device screen.
+  ⚠   This wipes the device again — that is expected and required.
+
+  After the device reboots into GrapheneOS setup:
+
+  1. Complete the setup wizard
+  2. Settings → Developer Options → OEM unlocking → OFF
+
+  Congratulations — your device is now running GrapheneOS!
+"""
+
+
+def _flash_failure_help() -> str:
+    return f"""
+  Troubleshooting:
+    • Check all USB connections (no hubs, try a different cable)
+    • Confirm the bootloader was unlocked: fastboot flashing unlock
+    • See the full guide:
+      https://grapheneos.org/install/cli#flashing-factory-images
+"""
+
+
+def _pre_sideload_instructions(ota_filename: str) -> str:
+    return f"""
+{"═" * _W}
+  📱  Sideload OTA Update
+{"═" * _W}
+
+  This pushes an OTA update to a device already running GrapheneOS.
+  Your data will be preserved.
+
+  Prepare your device:
+
+  1. Boot into Recovery Mode
+     Power off → hold Volume Down + press Power → select 'Recovery Mode'
+     (if 'No command' appears: hold Power, tap Volume Up once)
+
+  2. In the recovery menu, select 'Apply update from ADB'
+
+{"─" * _W}
+  OTA package: {ota_filename}
+{"─" * _W}
+"""
+
+
+def _post_sideload_instructions() -> str:
+    return f"""
+{"═" * _W}
+  ✅  OTA update sideloaded successfully!
+{"═" * _W}
+
+  Next steps on your device:
+
+  1. Select 'Reboot system now' in the recovery menu
+  2. Wait for the device to boot into the updated GrapheneOS
+"""
+
+
+def _sideload_failure_help() -> str:
+    return f"""
+  Troubleshooting:
+    • Make sure 'Apply update from ADB' is selected on the device
+    • Try a different USB cable or port (no hubs)
+    • Confirm the OTA package matches this exact device model
+"""
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -245,19 +359,16 @@ class DeviceManager:
     def check_fastboot_available() -> bool:
         """Return True if fastboot binary is on PATH"""
         try:
-            result = subprocess.run(
+            return subprocess.run(
                 ["fastboot", "--version"],
                 capture_output=True,
-                text=True,
-            )
-            # fastboot >= 35.0.1 is required per the GrapheneOS guide
-            return result.returncode == 0
+            ).returncode == 0
         except FileNotFoundError:
             return False
 
     @staticmethod
     def check_fastboot_device() -> bool:
-        """Check that exactly one device is connected in fastboot mode"""
+        """Check that a device is connected in fastboot mode"""
         try:
             result = subprocess.run(
                 ["fastboot", "devices"],
@@ -271,66 +382,33 @@ class DeviceManager:
                 return True
 
             _fail("No device found in fastboot mode")
-            print()
-            print("  Make sure your device shows 'Fastboot Mode' on screen.")
-            print("  To enter fastboot mode:")
-            print("    • Power off the device")
-            print("    • Hold Volume Down, then press Power")
-            print("    • Release when 'Fastboot Mode' appears")
-            print("  Also try a different USB cable or port (no hubs).")
+            _block("""
+  Make sure your device shows 'Fastboot Mode' on screen and is
+  connected directly (no USB hubs). Try a different cable or port.
+""")
             return False
         except FileNotFoundError:
-            _fail("'fastboot' not found — Android platform-tools must be on your PATH")
-            print()
-            print("  Download platform-tools:")
-            print("    https://developer.android.com/tools/releases/platform-tools")
-            print("  Then add the extracted directory to your PATH.")
+            _fail("'fastboot' not found — add Android platform-tools to your PATH")
+            _block("""
+  Download platform-tools:
+    https://developer.android.com/tools/releases/platform-tools
+""")
             return False
 
     @staticmethod
     def flash_device(flash_script_path: Path) -> "FlashResult":
         """Run the GrapheneOS flash-all.sh script after a pre-flight checklist"""
 
-        print()
-        print("═" * _W)
-        print("  ⚠   PRE-FLASH CHECKLIST — complete ALL steps before continuing")
-        print("═" * _W)
-        print()
-        print("  You must complete the following on your device BEFORE flashing:")
-        print()
-        print("  1. Enable Developer Options")
-        print("     Settings → About phone → tap 'Build number' 7 times")
-        print()
-        print("  2. Enable OEM Unlocking")
-        print("     Settings → Developer Options → OEM unlocking → ON")
-        print()
-        print("  3. Boot into Fastboot Mode")
-        print("     Power off → hold Volume Down + press Power")
-        print("     (or from your computer: adb reboot bootloader)")
-        print()
-        print("  4. Unlock the bootloader")
-        print("     Run in a terminal: fastboot flashing unlock")
-        print("     ⚠   This WIPES ALL DATA on the device — confirm on screen.")
-        print()
-        print("  5. Connect device directly to your computer (no USB hubs)")
-        print()
-        print("─" * _W)
-        print("  ⚠   FLASHING WILL ERASE EVERYTHING on the device.")
-        print("      Back up any data you want to keep before proceeding.")
-        print("─" * _W)
-        print()
+        _block(_pre_flash_checklist())
 
-        response = input("  Have you completed all 5 steps above? Type 'yes' to begin: ").strip().lower()
+        response = input("  Have you completed all 5 steps? Type 'yes' to begin flashing: ").strip().lower()
+        print()
         if response not in ("yes", "y"):
-            print()
             _info("Flashing cancelled. Run again when ready.")
             return FlashResult.CANCELLED
 
-        print()
         if not DeviceManager.check_fastboot_device():
-            print()
             _fail("Cannot flash — no device detected in fastboot mode.")
-            print("  Complete step 3 above, then run the command again.")
             return FlashResult.NO_DEVICE
 
         print()
@@ -338,46 +416,18 @@ class DeviceManager:
         print()
 
         try:
-            result = subprocess.run(
-                ["bash", str(flash_script_path)],
-                check=False,
-            )
-            if result.returncode == 0:
-                print()
-                print("═" * _W)
-                print("  ✅  GrapheneOS installed successfully!")
-                print("═" * _W)
-                print()
-                print("  ⚠   CRITICAL NEXT STEP — Lock the bootloader now:")
-                print()
-                print("  Your device is still in Fastboot Mode. Run:")
-                print()
-                print("    fastboot flashing lock")
-                print()
-                print("  Confirm the prompt on your device screen.")
-                print("  ⚠   This wipes the device again — that is expected and required.")
-                print()
-                print("  After the device reboots into GrapheneOS setup:")
-                print("    • Complete the setup wizard")
-                print("    • Go to Settings → Developer Options")
-                print("    • Toggle OEM unlocking OFF")
-                print()
-                print("  Congratulations — your device is now running GrapheneOS!")
-                print()
-                return FlashResult.SUCCESS
-            else:
-                print()
-                _fail("Flashing failed (flash-all.sh returned a non-zero exit code).")
-                print()
-                print("  Troubleshooting:")
-                print("    • Check all USB connections")
-                print("    • Confirm the bootloader was unlocked (fastboot flashing unlock)")
-                print("    • See the GrapheneOS install guide:")
-                print("      https://grapheneos.org/install/cli#flashing-factory-images")
-                return FlashResult.FAILED_FLASH
+            result = subprocess.run(["bash", str(flash_script_path)], check=False)
         except FileNotFoundError:
             _fail("'bash' not found — cannot run the flash script.")
             return FlashResult.FAILED_FLASH
+
+        if result.returncode == 0:
+            _block(_post_flash_instructions())
+            return FlashResult.SUCCESS
+
+        _fail("Flashing failed (flash-all.sh returned a non-zero exit code).")
+        _block(_flash_failure_help())
+        return FlashResult.FAILED_FLASH
 
     # ── ADB / Recovery ────────────────────────────────────────────────────────
 
@@ -385,52 +435,18 @@ class DeviceManager:
     def check_adb_available() -> bool:
         """Return True if adb binary is on PATH"""
         try:
-            result = subprocess.run(
+            return subprocess.run(
                 ["adb", "version"],
                 capture_output=True,
-                text=True,
-            )
-            return result.returncode == 0
+            ).returncode == 0
         except FileNotFoundError:
-            return False
-
-    @staticmethod
-    def check_recovery_device() -> bool:
-        """Check that a device is connected in ADB recovery mode"""
-        try:
-            result = subprocess.run(
-                ["adb", "devices"],
-                capture_output=True,
-                text=True,
-            )
-            lines = result.stdout.strip().splitlines()
-            recovery_devices = [l for l in lines if "recovery" in l]
-            if result.returncode == 0 and recovery_devices:
-                _ok("Device detected in recovery mode")
-                return True
-
-            _fail("No device found in recovery mode")
-            print()
-            print("  To enter recovery mode:")
-            print("    1. Power off the device")
-            print("    2. Hold Volume Down + Power until 'Fastboot Mode' appears")
-            print("    3. Use Volume buttons to navigate to 'Recovery Mode'")
-            print("    4. Press Power to select it")
-            print("    5. If you see 'No command', hold Power then tap Volume Up")
-            return False
-        except FileNotFoundError:
-            _fail("'adb' not found — Android platform-tools must be on your PATH")
             return False
 
     @staticmethod
     def check_sideload_mode() -> bool:
-        """Check that a device is in ADB sideload mode (silent — used for polling)"""
+        """Return True if a device is in ADB sideload mode (silent — used for polling)"""
         try:
-            result = subprocess.run(
-                ["adb", "devices"],
-                capture_output=True,
-                text=True,
-            )
+            result = subprocess.run(["adb", "devices"], capture_output=True, text=True)
             return result.returncode == 0 and "sideload" in result.stdout
         except FileNotFoundError:
             return False
@@ -439,57 +455,32 @@ class DeviceManager:
     def sideload_update(ota_path: Path) -> "FlashResult":
         """Sideload a GrapheneOS OTA update package via adb"""
 
-        print()
-        print("═" * _W)
-        print("  📱  Sideload OTA Update")
-        print("═" * _W)
-        print()
-        print("  This pushes an OTA update to a device already running GrapheneOS.")
-        print("  Your data will be preserved.")
-        print()
-        print("  Before continuing, prepare your device:")
-        print()
-        print("  1. Power off the device")
-        print("  2. Hold Volume Down + Power to enter Fastboot Mode")
-        print("  3. Use Volume buttons to highlight 'Recovery Mode'")
-        print("  4. Press Power to select it")
-        print("  5. If you see 'No command', hold Power then tap Volume Up once")
-        print("  6. In the recovery menu, select 'Apply update from ADB'")
-        print()
-        print("─" * _W)
-        print(f"  OTA package: {ota_path.name}")
-        print("─" * _W)
-        print()
+        _block(_pre_sideload_instructions(ota_path.name))
 
         response = input("  Device ready in sideload mode? Type 'yes' to start: ").strip().lower()
+        print()
         if response not in ("yes", "y"):
-            print()
             _info("Sideload cancelled. Run again when your device is ready.")
             return FlashResult.CANCELLED
 
-        print()
-
-        # Check device in recovery first; if not in sideload yet, wait
         if not DeviceManager.check_sideload_mode():
             _info("Waiting for device to enter sideload mode …")
-            print("  (Select 'Apply update from ADB' on your device if you haven't yet)")
-            print()
-
+            _block("""
+  (Select 'Apply update from ADB' on your device if you haven't yet)
+""")
             deadline = 60
             for elapsed in range(deadline):
                 if DeviceManager.check_sideload_mode():
                     _ok("Device is in sideload mode")
                     break
                 if elapsed % 10 == 9:
-                    remaining = deadline - elapsed - 1
-                    print(f"  Still waiting … {remaining}s remaining")
+                    _info(f"Still waiting … {deadline - elapsed - 1}s remaining")
                 time.sleep(1)
             else:
-                print()
                 _fail("Timed out waiting for sideload mode.")
-                print()
-                print("  Make sure 'Apply update from ADB' is selected on your device,")
-                print("  then run the command again.")
+                _block("""
+  Select 'Apply update from ADB' on your device, then run again.
+""")
                 return FlashResult.NOT_IN_SIDELOAD
 
         print()
@@ -497,33 +488,18 @@ class DeviceManager:
         print()
 
         try:
-            result = subprocess.run(
-                ["adb", "sideload", str(ota_path)],
-                check=False,
-            )
-            if result.returncode == 0:
-                print()
-                print("═" * _W)
-                print("  ✅  OTA update sideloaded successfully!")
-                print("═" * _W)
-                print()
-                print("  Next steps:")
-                print("    1. On your device, select 'Reboot system now'")
-                print("    2. Wait for the device to reboot into the updated GrapheneOS")
-                print()
-                return FlashResult.SUCCESS
-            else:
-                print()
-                _fail("Sideload failed (adb returned a non-zero exit code).")
-                print()
-                print("  Troubleshooting:")
-                print("    • Make sure 'Apply update from ADB' is selected on the device")
-                print("    • Try a different USB cable or port")
-                print("    • Confirm the OTA package matches this exact device model")
-                return FlashResult.FAILED_SIDELOAD
+            result = subprocess.run(["adb", "sideload", str(ota_path)], check=False)
         except FileNotFoundError:
-            _fail("'adb' not found — Android platform-tools must be on your PATH.")
+            _fail("'adb' not found — add Android platform-tools to your PATH.")
             return FlashResult.FAILED_SIDELOAD
+
+        if result.returncode == 0:
+            _block(_post_sideload_instructions())
+            return FlashResult.SUCCESS
+
+        _fail("Sideload failed (adb returned a non-zero exit code).")
+        _block(_sideload_failure_help())
+        return FlashResult.FAILED_SIDELOAD
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -571,9 +547,10 @@ class GrapheneOSFlasher:
 
         except urllib.error.URLError as e:
             _fail(f"Could not reach grapheneos.org: {e.reason}")
-            print()
-            print("  Check your internet connection and try again.")
-            print("  You can specify a version manually with --version <version>.")
+            _block("""
+  Check your internet connection and try again.
+  You can specify a version manually with --version <version>.
+""")
             sys.exit(1)
         except ValueError as e:
             _fail(str(e))
@@ -587,7 +564,6 @@ class GrapheneOSFlasher:
             include_ota: Also download the OTA update package.
                          Only needed when --sideload is used.
         """
-        print()
         _info(f"Working directory: {self.temp_dir}")
         print()
 
@@ -602,27 +578,22 @@ class GrapheneOSFlasher:
 
         # 2. Download factory image and its signature
         files: List[Tuple[str, Path]] = [
-            (
-                self.config.install_url,
-                self.temp_dir / self.config.install_filename,
-            ),
-            (
-                self.config.signature_url,
-                self.temp_dir / self.config.signature_filename,
-            ),
+            (self.config.install_url, self.temp_dir / self.config.install_filename),
+            (self.config.signature_url, self.temp_dir / self.config.signature_filename),
         ]
-
         for url, dest in files:
             if not self.file_handler.download_file(url, dest):
                 return False
 
-        # 3. Optionally download OTA package (for sideload mode only)
+        # 3. Optionally download OTA package (sideload mode only)
         if include_ota:
             ota_path = self.temp_dir / self.config.ota_filename
             if not self.file_handler.download_file(self.config.ota_url, ota_path):
                 _warn("OTA package not available for this version/device.")
-                print("  You may need to download it manually from:")
-                print(f"    {self.config.ota_url}")
+                _block(f"""
+  You may need to download it manually from:
+    {self.config.ota_url}
+""")
 
         return True
 
@@ -643,25 +614,22 @@ class GrapheneOSFlasher:
         if not self.file_handler.extract_archive(install_path, self.temp_dir):
             return None
 
-        # The zip extracts to a directory named after the archive (minus .zip)
         extract_dir = self.temp_dir / self.config.install_filename.removesuffix(".zip")
 
         if not extract_dir.is_dir():
-            # Fall back to a glob in case of slight naming differences
-            candidates = list(self.temp_dir.glob(
-                f"{self.config.device}-install-{self.config.version}*"
-            ))
-            dirs = [p for p in candidates if p.is_dir()]
-            if not dirs:
+            candidates = [
+                p for p in self.temp_dir.glob(f"{self.config.device}-install-{self.config.version}*")
+                if p.is_dir()
+            ]
+            if not candidates:
                 _fail("Could not find the extracted factory image directory.")
-                print(f"  Expected: {extract_dir}")
                 return None
-            extract_dir = dirs[0]
+            extract_dir = candidates[0]
 
         flash_script = extract_dir / "flash-all.sh"
         if not flash_script.exists():
             _fail(f"flash-all.sh not found in {extract_dir}")
-            print("  The archive may be corrupt. Try downloading again.")
+            _block("  The archive may be corrupt. Try downloading again.")
             return None
 
         return flash_script
@@ -671,94 +639,83 @@ class GrapheneOSFlasher:
         return self.device_manager.flash_device(flash_script_path)
 
     def get_instructions(self, flash_script_path: Path) -> str:
-        """Return manual flashing / sideloading instructions"""
+        """Return manual flashing / sideloading instructions as a single string"""
         extract_dir = flash_script_path.parent
         ota_path = self.temp_dir / self.config.ota_filename
-        rule = "─" * _W
+        r = _rule()
+        R = "═" * _W
 
-        lines = [
-            "",
-            "═" * _W,
-            "  ✅  Files downloaded and verified — ready to flash",
-            "═" * _W,
-            "",
-            f"  Device  : {self.config.device}",
-            f"  Version : {self.config.version}",
-            f"  Files   : {self.temp_dir}",
-            "",
-            rule,
-            "  HOW TO FLASH (installs GrapheneOS, wipes all data)",
-            rule,
-            "",
-            "  1. Enable Developer Options",
-            "     Settings → About phone → tap 'Build number' 7 times",
-            "",
-            "  2. Enable OEM Unlocking",
-            "     Settings → Developer Options → OEM unlocking → ON",
-            "",
-            "  3. Boot into Fastboot Mode",
-            "     Power off → hold Volume Down + press Power",
-            "     (or from your computer: adb reboot bootloader)",
-            "",
-            "  4. Unlock the bootloader",
-            "     ⚠   This WIPES ALL DATA — back up first!",
-            "     $ fastboot flashing unlock",
-            "     Confirm the prompt shown on your device screen.",
-            "",
-            "  5. Flash GrapheneOS",
-            f"     $ cd {extract_dir}",
-            "     $ bash flash-all.sh",
-            "",
-            "  6. Lock the bootloader  ⚠   DO NOT SKIP THIS STEP",
-            "     $ fastboot flashing lock",
-            "     Confirm on your device screen.",
-            "",
-            "  7. Disable OEM Unlocking",
-            "     After setup completes → Settings → Developer Options",
-            "     → OEM unlocking → OFF",
-            "",
-        ]
+        flash_steps = f"""\
+{r}
+  HOW TO FLASH (installs GrapheneOS, wipes all data)
+{r}
 
+  1. Enable Developer Options
+     Settings → About phone → tap 'Build number' 7 times
+
+  2. Enable OEM Unlocking
+     Settings → Developer Options → OEM unlocking → ON
+
+  3. Boot into Fastboot Mode
+     Power off → hold Volume Down + press Power
+     (or from your computer: adb reboot bootloader)
+
+  4. Unlock the bootloader  ⚠   backs up first, this WIPES ALL DATA
+     $ fastboot flashing unlock
+     Confirm the prompt shown on your device screen.
+
+  5. Flash GrapheneOS
+     $ cd {extract_dir}
+     $ bash flash-all.sh
+
+  6. Lock the bootloader  ⚠   DO NOT SKIP THIS STEP
+     $ fastboot flashing lock
+     Confirm on your device screen.
+
+  7. Disable OEM Unlocking after setup completes
+     Settings → Developer Options → OEM unlocking → OFF\
+"""
+
+        sideload_steps = f"""\
+
+{r}
+  HOW TO SIDELOAD AN OTA UPDATE (updates GrapheneOS, preserves data)
+{r}
+
+  1. Boot into Recovery Mode
+     Power off → hold Volume Down + press Power → select 'Recovery Mode'
+     (if 'No command' appears: hold Power, tap Volume Up once)
+
+  2. Select 'Apply update from ADB' in the recovery menu
+
+  3. Run on your computer:
+     $ adb sideload {ota_path}
+
+  4. Select 'Reboot system now' when complete\
+""" if ota_path.exists() else ""
+
+        automate = f"    Flash   : grapheneos-flasher {self.config.device} --flash"
         if ota_path.exists():
-            lines += [
-                rule,
-                "  HOW TO SIDELOAD AN OTA UPDATE (preserves data)",
-                rule,
-                "",
-                "  Use this to update an existing GrapheneOS install.",
-                "",
-                "  1. Boot into Recovery Mode",
-                "     Power off → hold Volume Down + press Power",
-                "     Navigate to 'Recovery Mode' → press Power",
-                "     (if 'No command' appears: hold Power, tap Volume Up once)",
-                "",
-                "  2. Select 'Apply update from ADB' in the recovery menu",
-                "",
-                "  3. Run on your computer:",
-                f"     $ adb sideload {ota_path}",
-                "",
-                "  4. Select 'Reboot system now' when complete",
-                "",
-            ]
+            automate += f"\n    Sideload: grapheneos-flasher {self.config.device} --sideload"
 
-        lines += [
-            rule,
-            "  Automate these steps with:",
-            f"    Flash   : grapheneos-flasher {self.config.device} --flash",
-        ]
+        return f"""
+{R}
+  ✅  Files downloaded and verified — ready to flash
+{R}
 
-        if ota_path.exists():
-            lines.append(
-                f"    Sideload: grapheneos-flasher {self.config.device} --sideload"
-            )
+  Device  : {self.config.device}
+  Version : {self.config.version}
+  Files   : {self.temp_dir}
 
-        lines += [
-            "",
-            "  Full guide: https://grapheneos.org/install/cli",
-            "",
-        ]
+{flash_steps}
+{sideload_steps}
 
-        return "\n".join(lines)
+{r}
+  Automate these steps with:
+{automate}
+
+  Full guide: https://grapheneos.org/install/cli
+"""
 
     @property
     def version(self) -> str:
