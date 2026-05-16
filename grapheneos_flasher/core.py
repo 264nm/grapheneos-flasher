@@ -12,7 +12,6 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Optional, List, Tuple
 from xml.etree import ElementTree
 
 
@@ -396,7 +395,7 @@ class DeviceManager:
             return False
 
     @staticmethod
-    def flash_device(flash_script_path: Path) -> "FlashResult":
+    def flash_device(flash_script_path: Path) -> FlashResult:
         """Run the GrapheneOS flash-all.sh script after a pre-flight checklist"""
 
         _block(_pre_flash_checklist())
@@ -452,7 +451,7 @@ class DeviceManager:
             return False
 
     @staticmethod
-    def sideload_update(ota_path: Path) -> "FlashResult":
+    def sideload_update(ota_path: Path) -> FlashResult:
         """Sideload a GrapheneOS OTA update package via adb"""
 
         _block(_pre_sideload_instructions(ota_path.name))
@@ -514,13 +513,13 @@ class GrapheneOSFlasher:
     def __init__(
         self,
         config: DownloadConfig,
-        file_handler: Optional[FileHandler] = None,
-        temp_dir: Optional[Path] = None,
+        file_handler: FileHandler | None = None,
+        temp_dir: Path | None = None,
     ):
         self.config = config
         self.file_handler = file_handler or DefaultFileHandler()
         self.temp_dir = temp_dir or Path(tempfile.mkdtemp(prefix="grapheneos_"))
-        self.security_verifier: Optional[SecurityVerifier] = None
+        self.security_verifier: SecurityVerifier | None = None
         self.device_manager = DeviceManager()
 
     @classmethod
@@ -577,7 +576,7 @@ class GrapheneOSFlasher:
         self.security_verifier = SecurityVerifier(allowed_signers_path)
 
         # 2. Download factory image and its signature
-        files: List[Tuple[str, Path]] = [
+        files: list[tuple[str, Path]] = [
             (self.config.install_url, self.temp_dir / self.config.install_filename),
             (self.config.signature_url, self.temp_dir / self.config.signature_filename),
         ]
@@ -607,7 +606,7 @@ class GrapheneOSFlasher:
         img_path = self.temp_dir / self.config.install_filename
         return self.security_verifier.verify_signature(sig_path, img_path)
 
-    def extract_files(self) -> Optional[Path]:
+    def extract_files(self) -> Path | None:
         """Extract the factory image archive and return the path to flash-all.sh"""
         install_path = self.temp_dir / self.config.install_filename
 
