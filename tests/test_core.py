@@ -148,7 +148,7 @@ class TestGrapheneOSFlasher:
         flasher = GrapheneOSFlasher(config)
 
         assert flasher.config == config
-        assert flasher.temp_dir.exists()
+        assert flasher.work_dir.exists()
 
     def test_get_latest_release_success(self):
         """Test successful release version fetch"""
@@ -169,21 +169,16 @@ class TestGrapheneOSFlasher:
 
         assert version == "2026050900"
 
-    def test_prepare_files_success(self):
-        """Test successful file preparation"""
+    def test_prepare_factory_image_success(self):
+        """Test successful factory image preparation"""
         config = DownloadConfig("shiba", "2026050900")
         flasher = GrapheneOSFlasher(config)
 
-        # Mock file handler methods
         mock_handler = Mock()
         mock_handler.download_file.return_value = True
         flasher.file_handler = mock_handler
 
-        # Properly mock the security verifier
-        mock_verifier = Mock()
-        flasher.security_verifier = mock_verifier
-
-        result = flasher.prepare_files()
+        result = flasher.prepare_factory_image()
 
         assert result is True
 

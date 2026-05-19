@@ -23,7 +23,7 @@ class TestArgumentParsing:
         assert args.device == "shiba"
         assert args.flash is False
         assert args.version is None
-        assert args.temp_dir is None
+        assert args.work_dir is None
 
     def test_parse_args_with_flash(self):
         """Test argument parsing with flash flag"""
@@ -45,15 +45,15 @@ class TestArgumentParsing:
         assert args.device == "shiba"
         assert args.version == "2026050900"
 
-    def test_parse_args_with_temp_dir(self):
-        """Test argument parsing with temp directory"""
-        test_args = ["shiba", "--temp-dir", "/tmp/test"]
+    def test_parse_args_with_work_dir(self):
+        """Test argument parsing with work directory"""
+        test_args = ["shiba", "--work-dir", "/tmp/test"]
 
         with patch.object(sys, 'argv', ['grapheneos-flasher'] + test_args):
             args = parse_args()
 
         assert args.device == "shiba"
-        assert args.temp_dir == Path("/tmp/test")
+        assert args.work_dir == Path("/tmp/test")
 
 
 class TestDeviceValidation:
@@ -96,7 +96,7 @@ class TestMainFunction:
 
         mock_flasher = Mock()
         mock_flasher.config = mock_config
-        mock_flasher.prepare_files.return_value = True
+        mock_flasher.prepare_factory_image.return_value = True
         mock_flasher.verify_signature.return_value = True
         mock_flasher.extract_files.return_value = Path("/tmp/flash.sh")
         mock_flasher.flash.return_value = Mock()
@@ -114,7 +114,7 @@ class TestMainFunction:
                         main()
 
         # Should have called the flasher methods
-        mock_flasher.prepare_files.assert_called_once()
+        mock_flasher.prepare_factory_image.assert_called_once()
         mock_flasher.verify_signature.assert_called_once()
         mock_flasher.extract_files.assert_called_once()
         # Should not have called flash since --flash was not passed
@@ -139,7 +139,7 @@ class TestMainFunction:
                         pass
 
         # Should have called all flasher methods including flash
-        mock_flasher.prepare_files.assert_called_once()
+        mock_flasher.prepare_factory_image.assert_called_once()
         mock_flasher.verify_signature.assert_called_once()
         mock_flasher.extract_files.assert_called_once()
         mock_flasher.flash.assert_called_once()
@@ -147,7 +147,7 @@ class TestMainFunction:
     def test_main_failed_preparation(self, mock_flasher):
         """Test failure during file preparation"""
         test_args = ["shiba"]
-        mock_flasher.prepare_files.return_value = False
+        mock_flasher.prepare_factory_image.return_value = False
 
         with patch.object(sys, 'argv', ['grapheneos-flasher'] + test_args):
             with patch('grapheneos_flasher.cli.GrapheneOSFlasher', return_value=mock_flasher):

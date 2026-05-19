@@ -4,7 +4,6 @@ Core functionality for GrapheneOS Flasher
 
 import sys
 import subprocess
-import tempfile
 import time
 import urllib.request
 import urllib.error
@@ -122,8 +121,18 @@ class DefaultFileHandler(FileHandler):
     """Default implementation of file operations"""
 
     def download_file(self, url: str, destination: Path) -> bool:
-        """Download a file with progress indication"""
+        """Download a file with progress indication, skipping if already present"""
         filename = destination.name
+
+        if destination.exists():
+            try:
+                size_mb = destination.stat().st_size / (1024 * 1024)
+                size_str = f"  ({size_mb:.0f} MB)" if size_mb >= 1.0 else ""
+            except OSError:
+                size_str = ""
+            _ok(f"{filename}{size_str}  (already exists, skipping)")
+            return True
+
         _info(f"Downloading {filename} …")
         try:
             urllib.request.urlretrieve(url, destination)
@@ -236,14 +245,26 @@ class SecurityVerifier:
 # Instruction blocks
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _pre_flash_checklist() -> str:
-    return f"""
-{"═" * _W}
-  ⚠   PRE-FLASH CHECKLIST — complete ALL steps before continuing
-{"═" * _W}
+def _pre_flash_checklist(manage_bootloader: bool) -> str:
+    if manage_bootloader:
+        steps = """\
+  1. Enable Developer Options
+     Settings → About phone → tap 'Build number' 7 times
 
-  You must do the following on your device BEFORE flashing:
+  2. Enable OEM Unlocking  ← required before the unlock command works
+     Settings → Developer Options → OEM unlocking → ON
 
+  3. Boot into Fastboot Mode
+     Power off → hold Volume Down + press Power
+     (or from your computer: adb reboot bootloader)
+
+  4. Connect device directly to your computer (no USB hubs)
+
+  The tool will handle unlocking and re-locking the bootloader.
+  Your device will be wiped during the unlock step.\
+"""
+    else:
+        steps = """\
   1. Enable Developer Options
      Settings → About phone → tap 'Build number' 7 times
 
@@ -254,39 +275,59 @@ def _pre_flash_checklist() -> str:
      Power off → hold Volume Down + press Power
      (or from your computer: adb reboot bootloader)
 
-  4. Unlock the bootloader
-     ⚠   This WIPES ALL DATA — back up first!
+  4. Unlock the bootloader  ⚠   This WIPES ALL DATA — back up first!
      Run: fastboot flashing unlock
      Confirm the prompt shown on your device screen.
 
   5. Connect device directly to your computer (no USB hubs)
 
+  After flashing, you must lock the bootloader:
+     fastboot flashing lock\
+"""
+
+    return f"""
+{"═" * _W}
+  ⚠   PRE-FLASH CHECKLIST
+{"═" * _W}
+
+{steps}
+
 {"─" * _W}
-  ⚠   FLASHING WILL ERASE EVERYTHING on the device.
+  ⚠   FLASHING WILL ERASE EVERYTHING on the device — back up first.
 {"─" * _W}
 """
 
 
-def _post_flash_instructions() -> str:
+def _post_flash_locked_success() -> str:
+    return f"""
+{"═" * _W}
+  ✅  GrapheneOS installed and bootloader locked!
+{"═" * _W}
+
+  Your device is rebooting into GrapheneOS setup.
+
+  After setup completes:
+    Settings → Developer Options → OEM unlocking → OFF
+
+  Congratulations — your device is now running GrapheneOS!
+"""
+
+
+def _post_flash_manual_lock_warning() -> str:
     return f"""
 {"═" * _W}
   ✅  GrapheneOS installed successfully!
 {"═" * _W}
 
-  ⚠   CRITICAL NEXT STEP — lock the bootloader now.
-  Your device is still in Fastboot Mode. Run:
+  ⚠   YOU MUST LOCK THE BOOTLOADER before using this device:
 
     fastboot flashing lock
 
   Confirm the prompt on your device screen.
-  ⚠   This wipes the device again — that is expected and required.
+  This wipes the device once more — that is expected and required.
 
   After the device reboots into GrapheneOS setup:
-
-  1. Complete the setup wizard
-  2. Settings → Developer Options → OEM unlocking → OFF
-
-  Congratulations — your device is now running GrapheneOS!
+    Settings → Developer Options → OEM unlocking → OFF
 """
 
 
@@ -395,38 +436,270 @@ class DeviceManager:
             return False
 
     @staticmethod
-    def flash_device(flash_script_path: Path) -> FlashResult:
-        """Run the GrapheneOS flash-all.sh script after a pre-flight checklist"""
+    def get_bootloader_state() -> str | None:
+        """
+        Query the bootloader lock state via fastboot.
+        Returns 'unlocked', 'locked', or None if undetermined / no device.
+        """
+        try:
+            result = subprocess.run(
+                ["fastboot", "getvar", "unlocked"],
+                capture_output=True,
+                text=True,
+            )
+            # fastboot writes getvar output to stderr
+            output = result.stdout + result.stderr
+            if "unlocked: yes" in output:
+                return "unlocked"
+            if "unlocked: no" in output:
+                return "locked"
+            return None
+        except FileNotFoundError:
+            return None
 
-        _block(_pre_flash_checklist())
+    @staticmethod
+    def wait_for_fastboot(timeout: int = 120) -> bool:
+        """Poll until a device appears in fastboot mode or timeout expires."""
+        _info("Waiting for device to return to fastboot mode …")
+        for elapsed in range(timeout):
+            try:
+                result = subprocess.run(
+                    ["fastboot", "devices"],
+                    capture_output=True,
+                    text=True,
+                )
+                if result.returncode == 0 and result.stdout.strip():
+                    _ok("Device is back in fastboot mode")
+                    return True
+            except FileNotFoundError:
+                return False
+            if elapsed > 0 and elapsed % 15 == 0:
+                _info(f"Still waiting … ({elapsed}s / {timeout}s)")
+            time.sleep(1)
+        _fail(f"Timed out after {timeout}s — device did not return to fastboot mode")
+        return False
 
-        response = input("  Have you completed all 5 steps? Type 'yes' to begin flashing: ").strip().lower()
+    @staticmethod
+    def unlock_bootloader() -> bool:
+        """
+        Interactively unlock the bootloader.
+
+        The device will display a confirmation prompt; the user must select
+        'Unlock the bootloader' using the volume and power buttons.
+        After confirming, the device wipes and reboots back into fastboot.
+        """
+        _block(f"""
+{"─" * _W}
+  ⚠   BOOTLOADER UNLOCK
+{"─" * _W}
+
+  Unlocking the bootloader will WIPE ALL DATA on your device.
+  Make sure you have backed up anything you want to keep.
+
+  When the unlock command is sent:
+    1. Your device shows an unlock confirmation screen
+    2. Use Volume buttons to highlight 'Unlock the bootloader'
+    3. Press Power to confirm
+    4. Device wipes and reboots back into fastboot mode automatically
+""")
+        response = input("  Ready to unlock? Type 'yes' to send the unlock command: ").strip().lower()
+        print()
+        if response not in ("yes", "y"):
+            _info("Unlock cancelled.")
+            return False
+
+        _info("Sending unlock command — confirm on your device screen …")
+        try:
+            result = subprocess.run(["fastboot", "flashing", "unlock"], check=False)
+        except FileNotFoundError:
+            _fail("'fastboot' not found.")
+            return False
+
+        if result.returncode != 0:
+            _fail("Unlock command failed (non-zero exit code).")
+            return False
+
+        print()
+        if not DeviceManager.wait_for_fastboot():
+            _fail("Device did not return to fastboot after unlock.")
+            _block(f"""
+  Boot your device into fastboot mode manually:
+    Power off → hold Volume Down + press Power
+  Then run the flasher again.
+""")
+            return False
+
+        state = DeviceManager.get_bootloader_state()
+        if state == "unlocked":
+            _ok("Bootloader is unlocked — verified")
+            return True
+
+        _fail(f"Expected bootloader to be unlocked, got: {state or 'unknown'}")
+        return False
+
+    @staticmethod
+    def lock_bootloader() -> bool:
+        """
+        Interactively lock the bootloader after a successful flash.
+
+        The device displays a confirmation prompt. After confirming, it wipes
+        once more and reboots into GrapheneOS setup — this is expected.
+        """
+        _block(f"""
+{"═" * _W}
+  ⚠   LOCK THE BOOTLOADER — critical for security
+{"═" * _W}
+
+  Locking enables verified boot, which is required for GrapheneOS
+  to function securely. The device will wipe once more and reboot
+  into GrapheneOS setup — this is expected and required.
+
+  When the lock command is sent:
+    1. Your device shows a lock confirmation screen
+    2. Use Volume buttons to highlight 'Lock the bootloader'
+    3. Press Power to confirm
+""")
+        response = input("  Ready to lock? Type 'yes' to send the lock command: ").strip().lower()
+        print()
+        if response not in ("yes", "y"):
+            _block(_post_flash_manual_lock_warning())
+            return False
+
+        _info("Sending lock command — confirm on your device screen …")
+        try:
+            result = subprocess.run(["fastboot", "flashing", "lock"], check=False)
+        except FileNotFoundError:
+            _fail("'fastboot' not found.")
+            _block(_post_flash_manual_lock_warning())
+            return False
+
+        if result.returncode != 0:
+            _fail("Lock command failed (non-zero exit code).")
+            _block(_post_flash_manual_lock_warning())
+            return False
+
+        # After locking the device reboots into GrapheneOS — fastboot won't be
+        # available for long. Attempt a quick state check; accept None (device
+        # already rebooted) as success since the command returned 0.
+        print()
+        _info("Verifying bootloader state …")
+        time.sleep(2)
+        state = DeviceManager.get_bootloader_state()
+
+        if state == "locked":
+            _ok("Bootloader is locked — verified")
+            return True
+        elif state is None:
+            # Device has already rebooted into GrapheneOS — expected success path
+            _ok("Device has rebooted — bootloader lock confirmed")
+            return True
+        else:
+            _fail(f"Unexpected bootloader state after lock: {state}")
+            _block(_post_flash_manual_lock_warning())
+            return False
+
+    @staticmethod
+    def flash_device(flash_script_path: Path, manage_bootloader: bool = True) -> FlashResult:
+        """
+        Run the GrapheneOS flash-all.sh script.
+
+        With manage_bootloader=True (default):
+          - Checks/unlocks the bootloader before flashing
+          - Locks the bootloader after a successful flash
+          - Validates state at each step
+
+        With manage_bootloader=False:
+          - Validates that the bootloader IS already unlocked before flashing
+          - Shows manual lock reminder after flashing
+        """
+        steps = "4" if manage_bootloader else "5"
+        _block(_pre_flash_checklist(manage_bootloader))
+
+        response = input(
+            f"  Have you completed all {steps} steps? Type 'yes' to continue: "
+        ).strip().lower()
         print()
         if response not in ("yes", "y"):
             _info("Flashing cancelled. Run again when ready.")
             return FlashResult.CANCELLED
 
         if not DeviceManager.check_fastboot_device():
-            _fail("Cannot flash — no device detected in fastboot mode.")
+            _fail("Cannot proceed — no device detected in fastboot mode.")
             return FlashResult.NO_DEVICE
 
         print()
+
+        if manage_bootloader:
+            # ── Unlock if needed ──────────────────────────────────────────────
+            state = DeviceManager.get_bootloader_state()
+            if state == "unlocked":
+                _ok("Bootloader is already unlocked — proceeding")
+            elif state == "locked":
+                _info("Bootloader is locked — unlocking now …")
+                if not DeviceManager.unlock_bootloader():
+                    return FlashResult.FAILED_FLASH
+                print()
+                # Re-check device presence after the reboot from unlock
+                if not DeviceManager.check_fastboot_device():
+                    return FlashResult.NO_DEVICE
+                print()
+            else:
+                _warn("Could not determine bootloader state — proceeding anyway")
+                _block(f"""
+  If flashing fails, ensure the bootloader is unlocked:
+    fastboot flashing unlock
+""")
+        else:
+            # ── Validate already unlocked ─────────────────────────────────────
+            state = DeviceManager.get_bootloader_state()
+            if state == "locked":
+                _fail("Bootloader is locked — cannot flash")
+                _block(f"""
+  Unlock it first, then run again:
+    fastboot flashing unlock
+""")
+                return FlashResult.FAILED_FLASH
+            elif state == "unlocked":
+                _ok("Bootloader is unlocked — prerequisite met")
+            else:
+                _warn("Could not verify bootloader state — proceeding anyway")
+            print()
+
         _info("Starting flash process — do not unplug the device …")
         print()
 
         try:
-            result = subprocess.run(["bash", str(flash_script_path)], check=False)
+            result = subprocess.run(
+                ["bash", flash_script_path.name],
+                cwd=flash_script_path.parent,
+                check=False,
+            )
         except FileNotFoundError:
             _fail("'bash' not found — cannot run the flash script.")
             return FlashResult.FAILED_FLASH
 
-        if result.returncode == 0:
-            _block(_post_flash_instructions())
-            return FlashResult.SUCCESS
+        if result.returncode != 0:
+            _fail("Flashing failed (flash-all.sh returned a non-zero exit code).")
+            _block(_flash_failure_help())
+            return FlashResult.FAILED_FLASH
 
-        _fail("Flashing failed (flash-all.sh returned a non-zero exit code).")
-        _block(_flash_failure_help())
-        return FlashResult.FAILED_FLASH
+        # ── Post-flash bootloader lock ────────────────────────────────────────
+        print()
+        if manage_bootloader:
+            # Device may still be in fastboot or may have rebooted — check first
+            if not DeviceManager.check_fastboot_device():
+                _info("Device not immediately available — waiting …")
+                if not DeviceManager.wait_for_fastboot(timeout=60):
+                    # Can't reach fastboot; show manual reminder and still report success
+                    _block(_post_flash_manual_lock_warning())
+                    return FlashResult.SUCCESS
+
+            locked = DeviceManager.lock_bootloader()
+            _block(_post_flash_locked_success() if locked else _post_flash_manual_lock_warning())
+        else:
+            _block(_post_flash_manual_lock_warning())
+
+        return FlashResult.SUCCESS
 
     # ── ADB / Recovery ────────────────────────────────────────────────────────
 
@@ -514,11 +787,11 @@ class GrapheneOSFlasher:
         self,
         config: DownloadConfig,
         file_handler: FileHandler | None = None,
-        temp_dir: Path | None = None,
+        work_dir: Path | None = None,
     ):
         self.config = config
         self.file_handler = file_handler or DefaultFileHandler()
-        self.temp_dir = temp_dir or Path(tempfile.mkdtemp(prefix="grapheneos_"))
+        self.work_dir = work_dir or Path.cwd()
         self.security_verifier: SecurityVerifier | None = None
         self.device_manager = DeviceManager()
 
@@ -555,19 +828,13 @@ class GrapheneOSFlasher:
             _fail(str(e))
             sys.exit(1)
 
-    def prepare_files(self, include_ota: bool = False) -> bool:
-        """
-        Download and stage all files needed for flashing (or sideloading).
-
-        Args:
-            include_ota: Also download the OTA update package.
-                         Only needed when --sideload is used.
-        """
-        _info(f"Working directory: {self.temp_dir}")
+    def prepare_factory_image(self) -> bool:
+        """Download and stage the factory image and its signature for flashing."""
+        _info(f"Working directory: {self.work_dir}")
         print()
 
-        # 1. Download the GrapheneOS public key (allowed_signers)
-        allowed_signers_path = self.temp_dir / "allowed_signers"
+        # 1. GrapheneOS public key
+        allowed_signers_path = self.work_dir / "allowed_signers"
         if not self.file_handler.download_file(
             f"{self.config.base_url}/allowed_signers", allowed_signers_path
         ):
@@ -575,49 +842,55 @@ class GrapheneOSFlasher:
 
         self.security_verifier = SecurityVerifier(allowed_signers_path)
 
-        # 2. Download factory image and its signature
+        # 2. Factory image and its signature
         files: list[tuple[str, Path]] = [
-            (self.config.install_url, self.temp_dir / self.config.install_filename),
-            (self.config.signature_url, self.temp_dir / self.config.signature_filename),
+            (self.config.install_url,   self.work_dir / self.config.install_filename),
+            (self.config.signature_url, self.work_dir / self.config.signature_filename),
         ]
         for url, dest in files:
             if not self.file_handler.download_file(url, dest):
                 return False
 
-        # 3. Optionally download OTA package (sideload mode only)
-        if include_ota:
-            ota_path = self.temp_dir / self.config.ota_filename
-            if not self.file_handler.download_file(self.config.ota_url, ota_path):
-                _warn("OTA package not available for this version/device.")
-                _block(f"""
+        return True
+
+    def prepare_ota(self) -> bool:
+        """Download the OTA update package for sideloading."""
+        _info(f"Working directory: {self.work_dir}")
+        print()
+
+        ota_path = self.work_dir / self.config.ota_filename
+        if not self.file_handler.download_file(self.config.ota_url, ota_path):
+            _warn("OTA package not available for this version/device.")
+            _block(f"""
   You may need to download it manually from:
     {self.config.ota_url}
 """)
+            return False
 
         return True
 
     def verify_signature(self) -> bool:
         """Verify the factory image against GrapheneOS's public signing key"""
         if not self.security_verifier:
-            _fail("Security verifier not initialised — call prepare_files() first")
+            _fail("Security verifier not initialised — call prepare_factory_image() first")
             return False
 
-        sig_path = self.temp_dir / self.config.signature_filename
-        img_path = self.temp_dir / self.config.install_filename
+        sig_path = self.work_dir / self.config.signature_filename
+        img_path = self.work_dir / self.config.install_filename
         return self.security_verifier.verify_signature(sig_path, img_path)
 
     def extract_files(self) -> Path | None:
         """Extract the factory image archive and return the path to flash-all.sh"""
-        install_path = self.temp_dir / self.config.install_filename
+        install_path = self.work_dir / self.config.install_filename
 
-        if not self.file_handler.extract_archive(install_path, self.temp_dir):
+        if not self.file_handler.extract_archive(install_path, self.work_dir):
             return None
 
-        extract_dir = self.temp_dir / self.config.install_filename.removesuffix(".zip")
+        extract_dir = self.work_dir / self.config.install_filename.removesuffix(".zip")
 
         if not extract_dir.is_dir():
             candidates = [
-                p for p in self.temp_dir.glob(f"{self.config.device}-install-{self.config.version}*")
+                p for p in self.work_dir.glob(f"{self.config.device}-install-{self.config.version}*")
                 if p.is_dir()
             ]
             if not candidates:
@@ -633,14 +906,14 @@ class GrapheneOSFlasher:
 
         return flash_script
 
-    def flash(self, flash_script_path: Path) -> FlashResult:
+    def flash(self, flash_script_path: Path, manage_bootloader: bool = True) -> FlashResult:
         """Run the interactive flashing process"""
-        return self.device_manager.flash_device(flash_script_path)
+        return self.device_manager.flash_device(flash_script_path, manage_bootloader)
 
     def get_instructions(self, flash_script_path: Path) -> str:
         """Return manual flashing / sideloading instructions as a single string"""
         extract_dir = flash_script_path.parent
-        ota_path = self.temp_dir / self.config.ota_filename
+        ota_path = self.work_dir / self.config.ota_filename
         r = _rule()
         R = "═" * _W
 
@@ -704,7 +977,7 @@ class GrapheneOSFlasher:
 
   Device  : {self.config.device}
   Version : {self.config.version}
-  Files   : {self.temp_dir}
+  Files   : {self.work_dir}
 
 {flash_steps}
 {sideload_steps}

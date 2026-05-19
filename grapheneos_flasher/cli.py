@@ -4,6 +4,7 @@ Command-line interface for GrapheneOS Flasher
 
 import argparse
 import sys
+import tempfile
 from pathlib import Path
 
 from grapheneos_flasher import __version__
@@ -117,10 +118,25 @@ supported devices:
         help="Specific release to use, e.g. 2026050900 (default: latest)",
     )
     parser.add_argument(
-        "--temp-dir",
+        "--work-dir",
         type=Path,
         metavar="PATH",
-        help="Directory for downloaded files (default: system temp)",
+        help=(
+            "Directory for downloaded files "
+            "(default: current working directory; "
+            "falls back to a temp dir if the path does not exist)"
+        ),
+    )
+    parser.add_argument(
+        "--no-bootloader-mgmt",
+        dest="bootloader_mgmt",
+        action="store_false",
+        default=True,
+        help=(
+            "Skip automatic bootloader unlock/lock. "
+            "You must unlock before flashing and lock afterwards manually. "
+            "The bootloader state is still validated as a prerequisite."
+        ),
     )
 
     return parser
@@ -147,6 +163,22 @@ def warn_unknown_device(device: str) -> None:
         print("     If you're sure this is correct, the download will tell you.")
         print("     Check supported devices: https://grapheneos.org/faq#device-support")
         print()
+
+
+def resolve_work_dir(specified: Path | None) -> Path:
+    """
+    Resolve the working directory for downloads:
+      - Nothing specified  → current working directory
+      - Path exists        → use it
+      - Path doesn't exist → warn and fall back to a system temp dir
+    """
+    if specified is None:
+        return Path.cwd()
+    if specified.exists():
+        return specified
+    work_dir = Path(tempfile.mkdtemp(prefix="grapheneos_"))
+    print(f"  ⚠  '{specified}' does not exist — using temp dir instead: {work_dir}")
+    return work_dir
 
 
 def check_prerequisites(mode_flash: bool, mode_sideload: bool) -> None:
@@ -192,6 +224,9 @@ def main() -> None:
     print(f"  GrapheneOS Flasher  v{__version__}")
     print(f"  Device : {args.device}")
     print(f"  Mode   : {mode_label}")
+    if args.flash:
+        mgmt_label = "on (--no-bootloader-mgmt to disable)" if args.bootloader_mgmt else "off (manual)"
+        print(f"  Bootloader mgmt : {mgmt_label}")
     print("═" * _W)
 
     # ── Basic validation ──────────────────────────────────────────────────────
@@ -218,21 +253,40 @@ def main() -> None:
     print()
 
     config = DownloadConfig(device=args.device, version=version)
-    flasher = GrapheneOSFlasher(config, temp_dir=args.temp_dir)
+    work_dir = resolve_work_dir(args.work_dir)
+    flasher = GrapheneOSFlasher(config, work_dir=work_dir)
 
-    total_steps = 3 if not args.sideload else 4
+    # ── Sideload path (independent — only needs the OTA package) ─────────────
+    if args.sideload:
+        print("─" * _W)
+        print("  Step 1/2 — Downloading OTA package")
+        print("─" * _W)
 
-    # ── Step 1: Download ──────────────────────────────────────────────────────
+        if not flasher.prepare_ota():
+            print()
+            print("  ✗  Could not download OTA package. Check messages above.")
+            sys.exit(1)
+
+        print()
+        print("─" * _W)
+        print("  Step 2/2 — Sideloading")
+        print("─" * _W)
+
+        result = flasher.device_manager.sideload_update(flasher.work_dir / config.ota_filename)
+        sys.exit(0 if result in (FlashResult.SUCCESS, FlashResult.CANCELLED) else 1)
+
+    # ── Flash / dry-run path ──────────────────────────────────────────────────
+    total_steps = 4 if args.flash else 3
+
     print("─" * _W)
-    print(f"  Step 1/{total_steps} — Downloading files")
+    print(f"  Step 1/{total_steps} — Downloading factory image")
     print("─" * _W)
 
-    if not flasher.prepare_files(include_ota=args.sideload):
+    if not flasher.prepare_factory_image():
         print()
         print("  ✗  Download failed. Check the messages above and try again.")
         sys.exit(1)
 
-    # ── Step 2: Verify ────────────────────────────────────────────────────────
     print()
     print("─" * _W)
     print(f"  Step 2/{total_steps} — Verifying signature")
@@ -244,7 +298,6 @@ def main() -> None:
         print("  ✗  Aborting — do not flash unverified images.")
         sys.exit(1)
 
-    # ── Step 3: Extract ───────────────────────────────────────────────────────
     print()
     print("─" * _W)
     print(f"  Step 3/{total_steps} — Extracting factory image")
@@ -257,39 +310,11 @@ def main() -> None:
         print("  ✗  Extraction failed. The download may be corrupt; try again.")
         sys.exit(1)
 
-    # ── Step 4 (optional): Flash or Sideload ─────────────────────────────────
     if args.flash:
         print()
-        result = flasher.flash(flash_script_path)
-        if result == FlashResult.CANCELLED:
-            sys.exit(0)
-        if result != FlashResult.SUCCESS:
-            sys.exit(1)
-
-    elif args.sideload:
-        print()
-        print("─" * _W)
-        print(f"  Step 4/{total_steps} — Sideloading OTA update")
-        print("─" * _W)
-
-        ota_path = flasher.temp_dir / config.ota_filename
-        if not ota_path.exists():
-            print()
-            print(f"  ✗  OTA package not found: {ota_path.name}")
-            print()
-            print("  The OTA package could not be downloaded for this version/device.")
-            print("  You can download it manually from:")
-            print(f"    {config.ota_url}")
-            sys.exit(1)
-
-        result = flasher.device_manager.sideload_update(ota_path)
-        if result == FlashResult.CANCELLED:
-            sys.exit(0)
-        if result != FlashResult.SUCCESS:
-            sys.exit(1)
-
+        result = flasher.flash(flash_script_path, manage_bootloader=args.bootloader_mgmt)
+        sys.exit(0 if result in (FlashResult.SUCCESS, FlashResult.CANCELLED) else 1)
     else:
-        # Dry-run: print manual instructions
         print(flasher.get_instructions(flash_script_path))
 
 
