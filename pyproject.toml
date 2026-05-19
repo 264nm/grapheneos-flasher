@@ -1,6 +1,6 @@
 [project]
 name = "grapheneos-flasher"
-version = "1.0.0"
+version = "0.1.0"
 description = "Automated GrapheneOS flashing with security verification"
 readme = "README.md"
 authors = [
@@ -22,8 +22,8 @@ dependencies = []
 grapheneos-flasher = "grapheneos_flasher.cli:main"
 
 [project.urls]
-"Homepage" = "https://github.com/yourusername/grapheneos-flasher"
-"Bug Tracker" = "https://github.com/yourusername/grapheneos-flasher/issues"
+"Homepage" = "https://github.com/264nm/grapheneos-flasher"
+"Bug Tracker" = "https://github.com/264nm/grapheneos-flasher/issues"
 
 [build-system]
 requires = ["hatchling"]
@@ -38,16 +38,17 @@ dev = [
     "black>=24.0.0",
     "isort>=5.0.0",
     "flake8>=7.0.0",
+    "flake8-pyproject>=1.2.0",
     "types-requests>=2.0.0",
 ]
 
 [tool.black]
-line-length = 88
+line-length = 79
 target-version = ['py314']
 
 [tool.isort]
 profile = "black"
-line_length = 88
+line_length = 79
 
 [tool.mypy]
 python_version = "3.14"
@@ -91,4 +92,16 @@ exclude_lines = [
     "raise NotImplementedError",
     "if __name__ == .__main__.:",
     "if TYPE_CHECKING:",
+]
+
+[tool.flake8]
+max-line-length = 79
+extend-ignore = [
+    # Black handles line length; long user-facing strings and URLs cannot
+    # be broken without changing their content.
+    "E501",
+    # Black sometimes places a line break before a binary operator (W504)
+    # or after one (W503); both conflict with Black's style.
+    "W503",
+    "W504",
 ]

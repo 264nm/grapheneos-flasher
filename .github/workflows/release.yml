@@ -1,0 +1,53 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+jobs:
+  # ── Gate: tests must pass before anything is published ──────────────────────
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.14"
+
+      - name: Install dependencies
+        run: uv sync --extra dev
+
+      - name: Run tests
+        run: uv run python -m pytest --tb=short -q
+
+  # ── Build and publish to GitHub Releases ─────────────────────────────────────
+  release:
+    name: Release
+    runs-on: ubuntu-latest
+    needs: test
+
+    permissions:
+      contents: write   # required to create the GitHub release
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v8.1.0
+        with:
+          python-version: "3.14"
+
+      - name: Build package
+        run: uv build
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v4
+        with:
+          files: dist/*
+          generate_release_notes: true
+          fail_on_unmatched_files: true

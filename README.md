@@ -60,7 +60,7 @@ uv run grapheneos-flasher shiba
 
 Downloads the latest factory image and signature, verifies the cryptographic
 signature against GrapheneOS's public key, and extracts the archive. Prints
-manual instructions at the end. Nothing is written to your device.
+manual step-by-step instructions at the end. Nothing is written to your device.
 
 ### Flash GrapheneOS (installs the OS, wipes all data)
 
@@ -69,9 +69,18 @@ uv run grapheneos-flasher shiba --flash
 ```
 
 Runs through download → verify → extract, then presents a pre-flight checklist
-and walks you through the flash interactively. After a successful flash, it
-reminds you to lock the bootloader — a required step that the tool cannot skip
-for you.
+and walks you through the flash interactively. The tool handles unlocking and
+re-locking the bootloader automatically.
+
+### Flash without bootloader management
+
+```bash
+uv run grapheneos-flasher shiba --flash --no-bootloader-mgmt
+```
+
+Skips automatic unlock/lock. You must run `fastboot flashing unlock` before
+flashing and `fastboot flashing lock` afterwards. The tool still validates that
+the bootloader is unlocked before proceeding.
 
 ### Flash a specific version
 
@@ -85,10 +94,27 @@ uv run grapheneos-flasher shiba --version 2026050900 --flash
 uv run grapheneos-flasher shiba --sideload
 ```
 
-Downloads the OTA update package for your device and version, verifies it, then
-guides you through booting into recovery and sideloading via `adb sideload`.
-Use this to update a device **already running GrapheneOS** — it is not a
-substitute for a fresh flash.
+Downloads only the OTA update package (not the full factory image), then guides
+you through booting into recovery and sideloading via `adb sideload`. Use this
+to update a device **already running GrapheneOS** — it is not a substitute for
+a fresh flash.
+
+### Re-running without re-downloading
+
+By default, files are saved in your current working directory. Running the same
+command again will skip files that are already present:
+
+```
+  ✓  shiba-install-2026050900.zip  (1573 MB)  (already exists, skipping)
+```
+
+Use `--work-dir` to specify a different location:
+
+```bash
+uv run grapheneos-flasher shiba --work-dir ~/grapheneos-files
+```
+
+If the directory does not exist the tool falls back to a system temp directory.
 
 ---
 
@@ -113,6 +139,10 @@ substitute for a fresh flash.
 | `raven` | Pixel 6 Pro |
 | `bluejay` | Pixel 6a |
 
+Devices are modelled by the `Device` enum in `cli.py` — member name is the
+codename, value is the display name. `Device.from_codename(s)` returns the
+member or `None` for unknown inputs.
+
 For the authoritative list see
 [grapheneos.org/faq#device-support](https://grapheneos.org/faq#device-support).
 
@@ -122,26 +152,30 @@ For the authoritative list see
 
 ### Fresh install (`--flash`)
 
-1. **Download** the GrapheneOS public key (`allowed_signers`), the factory
-   image zip, and its `.sig` signature file from `releases.grapheneos.org`.
+1. **Download** `allowed_signers`, the factory image zip, and its `.sig`
+   signature file from `releases.grapheneos.org`. Skips files already present
+   in the working directory.
 2. **Verify** the signature with `ssh-keygen -Y verify`, exactly as the
    official guide prescribes.
 3. **Extract** the archive with `tar xf`.
-4. **Pre-flight checklist** — the tool pauses and shows you exactly which steps
-   to complete on your device (OEM unlocking, bootloader unlock, fastboot mode)
+4. **Pre-flight checklist** — pauses and shows what to prepare on your device
    before you type `yes`.
-5. **Flash** — runs `bash flash-all.sh` from the extracted directory.
-6. **Post-flash instructions** — reminds you to run `fastboot flashing lock`
-   and disable OEM unlocking after setup. **Do not skip this step.**
+5. **Unlock** — checks `fastboot getvar unlocked`. If locked, sends
+   `fastboot flashing unlock`, waits for the device to wipe and reboot back
+   into fastboot, and verifies the new state. Skipped with `--no-bootloader-mgmt`.
+6. **Flash** — runs `bash flash-all.sh` from inside the extracted directory.
+7. **Lock** — sends `fastboot flashing lock` and verifies the bootloader is
+   locked before the device reboots into GrapheneOS setup.
+   Skipped with `--no-bootloader-mgmt` (reminder shown instead).
 
 ### OTA sideload (`--sideload`)
 
-1. Downloads and verifies the OTA update package.
+1. Downloads only the OTA update package (no factory image).
 2. Guides you through booting into recovery mode and selecting
    *Apply update from ADB*.
 3. Runs `adb sideload <ota.zip>`.
 
-> **Note:** Sideloading is for updating a device that already runs GrapheneOS.
+> **Note:** Sideloading is for updating a device already running GrapheneOS.
 > For a fresh install, use `--flash` instead.
 
 ---
@@ -151,9 +185,27 @@ For the authoritative list see
 - Signature verification uses the same `ssh-keygen -Y verify` command as the
   official GrapheneOS CLI guide — no third-party crypto libraries.
 - The tool refuses to flash if verification fails.
-- All files are downloaded to an isolated temporary directory.
-- The factory image's namespace is `"factory images"` and the identity is
+- All files are downloaded to the working directory (default: CWD).
+- The factory image namespace is `"factory images"` and the identity is
   `contact@grapheneos.org`, matching GrapheneOS's published signing policy.
+
+---
+
+## Architecture
+
+| Module | Class | Responsibility |
+|--------|-------|---------------|
+| `ui.py` | `Instructions` | Terminal output helpers (`ok`, `fail`, `info`, `warn`, `block`, `step`) and all user-facing instruction text |
+| `core.py` | `GrapheneOSFlasher` | Top-level orchestrator |
+| `core.py` | `DownloadConfig` | URL and filename construction |
+| `core.py` | `DefaultFileHandler` | HTTP downloads and archive extraction |
+| `core.py` | `SecurityVerifier` | `ssh-keygen` signature verification |
+| `core.py` | `DeviceManager` | `fastboot` and `adb` device interaction, bootloader management |
+| `cli.py` | — | Argument parsing and entry point |
+
+`FileHandler` is an abstract base class — supply a custom implementation to
+`GrapheneOSFlasher(config, file_handler=...)` for testing or alternative
+download strategies.
 
 ---
 
@@ -164,11 +216,15 @@ For the authoritative list see
 uv sync
 
 # Run tests
-uv run pytest
+uv run python -m pytest
 
-# Run a specific test category
-uv run pytest -m unit
-uv run pytest -m integration   # requires network + platform-tools
+# Run a specific test file
+uv run python -m pytest tests/test_ui.py
+uv run python -m pytest tests/test_core.py
+uv run python -m pytest tests/test_cli.py
+
+# With coverage
+uv run python -m pytest --cov=grapheneos_flasher --cov-report=html
 
 # Type checking
 uv run mypy grapheneos_flasher
@@ -177,24 +233,7 @@ uv run mypy grapheneos_flasher
 uv run black grapheneos_flasher tests
 uv run isort grapheneos_flasher tests
 uv run flake8 grapheneos_flasher tests
-
-# Coverage report
-uv run pytest --cov=grapheneos_flasher --cov-report=html
 ```
-
-### Architecture
-
-| Class | Responsibility |
-|-------|---------------|
-| `GrapheneOSFlasher` | Top-level orchestrator |
-| `DownloadConfig` | URL and filename construction |
-| `DefaultFileHandler` | HTTP downloads and archive extraction |
-| `SecurityVerifier` | `ssh-keygen` signature verification |
-| `DeviceManager` | `fastboot` and `adb` device interaction |
-
-`FileHandler` is an abstract base class — you can supply a custom
-implementation to `GrapheneOSFlasher(config, file_handler=...)` for testing
-or alternative download strategies.
 
 ---
 
