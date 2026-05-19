@@ -8,7 +8,7 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from grapheneos_flasher.cli import main, parse_args, validate_device
+from grapheneos_flasher.cli import Device, main, parse_args, validate_device
 from grapheneos_flasher.core import FlashResult
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -91,6 +91,40 @@ class TestArgumentParsing:
 # ─────────────────────────────────────────────────────────────────────────────
 # Device validation
 # ─────────────────────────────────────────────────────────────────────────────
+
+
+class TestDevice:
+
+    def test_known_codenames_resolve(self):
+        for codename in ("shiba", "husky", "oriole", "caiman", "tokay"):
+            assert Device.from_codename(codename) is not None
+
+    def test_unknown_codename_returns_none(self):
+        assert Device.from_codename("unknown") is None
+
+    def test_values_are_display_names(self):
+        assert Device.shiba.value == "Pixel 8"
+        assert Device.oriole.value == "Pixel 6"
+        assert Device.tokay.value == "Pixel 9a"
+
+    def test_codenames_are_lowercase_alpha(self):
+        assert all(d.name.isalpha() and d.name.islower() for d in Device)
+
+    def test_codenames_set(self):
+        codenames = Device.codenames()
+        assert "shiba" in codenames
+        assert "unknown" not in codenames
+
+    def test_is_immutable(self):
+        with pytest.raises(AttributeError):
+            Device.shiba = "something"  # type: ignore[misc]
+
+    def test_str_is_display_name(self):
+        # StrEnum: str(member) == member.value (the display name)
+        assert str(Device.shiba) == "Pixel 8"
+
+    def test_name_is_codename(self):
+        assert Device.shiba.name == "shiba"
 
 
 class TestDeviceValidation:
