@@ -9,11 +9,11 @@ from pathlib import Path
 
 from grapheneos_flasher import __version__
 from grapheneos_flasher.core import (
-    GrapheneOSFlasher,
-    DownloadConfig,
     DeviceManager,
+    DownloadConfig,
     FlashResult,
-    _W,
+    GrapheneOSFlasher,
+    Instructions,
 )
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -22,27 +22,27 @@ from grapheneos_flasher.core import (
 
 DEVICE_CODENAMES: dict[str, str] = {
     # Pixel 9 series
-    "tokay":    "Pixel 9a",
-    "caiman":   "Pixel 9 Pro XL",
-    "komodo":   "Pixel 9 Pro XL",  # alternate name in older builds
-    "comet":    "Pixel 9 Pro",
-    "tegu":     "Pixel 9 Pro Fold",
-    "akita":    "Pixel 9",
+    "tokay": "Pixel 9a",
+    "caiman": "Pixel 9 Pro XL",
+    "komodo": "Pixel 9 Pro XL",  # alternate name in older builds
+    "comet": "Pixel 9 Pro",
+    "tegu": "Pixel 9 Pro Fold",
+    "akita": "Pixel 9",
     # Pixel 8 series
-    "shiba":    "Pixel 8",
-    "husky":    "Pixel 8 Pro",
+    "shiba": "Pixel 8",
+    "husky": "Pixel 8 Pro",
     "huskypro": "Pixel 8 Pro",
-    "felix":    "Pixel Fold",
+    "felix": "Pixel Fold",
     "tangorpro": "Pixel Tablet",
-    "axolotl":  "Pixel 8a",
+    "axolotl": "Pixel 8a",
     # Pixel 7 series
-    "panther":  "Pixel 7",
-    "cheetah":  "Pixel 7 Pro",
-    "lynx":     "Pixel 7a",
+    "panther": "Pixel 7",
+    "cheetah": "Pixel 7 Pro",
+    "lynx": "Pixel 7a",
     # Pixel 6 series
-    "oriole":   "Pixel 6",
-    "raven":    "Pixel 6 Pro",
-    "bluejay":  "Pixel 6a",
+    "oriole": "Pixel 6",
+    "raven": "Pixel 6 Pro",
+    "bluejay": "Pixel 6a",
 }
 
 DEVICE_TABLE = "\n".join(
@@ -54,6 +54,7 @@ DEVICE_TABLE = "\n".join(
 # ─────────────────────────────────────────────────────────────────────────────
 # Argument parsing
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 def parse_args() -> argparse.Namespace:
     """Parse and return CLI arguments (convenience wrapper used by tests)."""
@@ -146,6 +147,7 @@ supported devices:
 # Validation helpers
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 def validate_device(device: str) -> bool:
     """
     Validate a GrapheneOS device codename.
@@ -160,8 +162,12 @@ def warn_unknown_device(device: str) -> None:
     """Print a non-fatal warning when the codename isn't in our known list"""
     if device not in DEVICE_CODENAMES:
         print(f"  ⚠  '{device}' is not in the known device list.")
-        print("     If you're sure this is correct, the download will tell you.")
-        print("     Check supported devices: https://grapheneos.org/faq#device-support")
+        print(
+            "     If you're sure this is correct, the download will tell you."
+        )
+        print(
+            "     Check supported devices: https://grapheneos.org/faq#device-support"
+        )
         print()
 
 
@@ -177,7 +183,9 @@ def resolve_work_dir(specified: Path | None) -> Path:
     if specified.exists():
         return specified
     work_dir = Path(tempfile.mkdtemp(prefix="grapheneos_"))
-    print(f"  ⚠  '{specified}' does not exist — using temp dir instead: {work_dir}")
+    print(
+        f"  ⚠  '{specified}' does not exist — using temp dir instead: {work_dir}"
+    )
     return work_dir
 
 
@@ -197,8 +205,12 @@ def check_prerequisites(mode_flash: bool, mode_sideload: bool) -> None:
         for tool, reason in missing:
             print(f"    • {tool}  ({reason})")
         print()
-        print("  Install Android platform-tools (fastboot and adb are included):")
-        print("    https://developer.android.com/tools/releases/platform-tools")
+        print(
+            "  Install Android platform-tools (fastboot and adb are included):"
+        )
+        print(
+            "    https://developer.android.com/tools/releases/platform-tools"
+        )
         print()
         print("  Add the extracted directory to your PATH, then run again.")
         print()
@@ -209,31 +221,42 @@ def check_prerequisites(mode_flash: bool, mode_sideload: bool) -> None:
 # Entry point
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 def main() -> None:
     parser = build_parser()
     args = parser.parse_args()
 
     # ── Banner ────────────────────────────────────────────────────────────────
     mode_label = (
-        "Flash (install GrapheneOS)"  if args.flash     else
-        "Sideload (OTA update)"       if args.sideload  else
-        "Download & Verify only"
+        "Flash (install GrapheneOS)"
+        if args.flash
+        else (
+            "Sideload (OTA update)"
+            if args.sideload
+            else "Download & Verify only"
+        )
     )
     print()
-    print("═" * _W)
+    print(Instructions._H)
     print(f"  GrapheneOS Flasher  v{__version__}")
     print(f"  Device : {args.device}")
     print(f"  Mode   : {mode_label}")
     if args.flash:
-        mgmt_label = "on (--no-bootloader-mgmt to disable)" if args.bootloader_mgmt else "off (manual)"
+        mgmt_label = (
+            "on (--no-bootloader-mgmt to disable)"
+            if args.bootloader_mgmt
+            else "off (manual)"
+        )
         print(f"  Bootloader mgmt : {mgmt_label}")
-    print("═" * _W)
+    print(Instructions._H)
 
     # ── Basic validation ──────────────────────────────────────────────────────
     if not validate_device(args.device):
         print()
         print(f"  ✗  Invalid device codename: '{args.device}'")
-        print("     Codenames are lowercase alphanumeric (e.g. shiba, oriole).")
+        print(
+            "     Codenames are lowercase alphanumeric (e.g. shiba, oriole)."
+        )
         sys.exit(1)
 
     print()
@@ -258,39 +281,33 @@ def main() -> None:
 
     # ── Sideload path (independent — only needs the OTA package) ─────────────
     if args.sideload:
-        print("─" * _W)
-        print("  Step 1/2 — Downloading OTA package")
-        print("─" * _W)
+        Instructions.step(1, 2, "Downloading OTA package")
 
         if not flasher.prepare_ota():
             print()
             print("  ✗  Could not download OTA package. Check messages above.")
             sys.exit(1)
 
-        print()
-        print("─" * _W)
-        print("  Step 2/2 — Sideloading")
-        print("─" * _W)
+        Instructions.step(2, 2, "Sideloading")
 
-        result = flasher.device_manager.sideload_update(flasher.work_dir / config.ota_filename)
-        sys.exit(0 if result in (FlashResult.SUCCESS, FlashResult.CANCELLED) else 1)
+        result = flasher.device_manager.sideload_update(
+            flasher.work_dir / config.ota_filename
+        )
+        sys.exit(
+            0 if result in (FlashResult.SUCCESS, FlashResult.CANCELLED) else 1
+        )
 
     # ── Flash / dry-run path ──────────────────────────────────────────────────
     total_steps = 4 if args.flash else 3
 
-    print("─" * _W)
-    print(f"  Step 1/{total_steps} — Downloading factory image")
-    print("─" * _W)
+    Instructions.step(1, total_steps, "Downloading factory image")
 
     if not flasher.prepare_factory_image():
         print()
         print("  ✗  Download failed. Check the messages above and try again.")
         sys.exit(1)
 
-    print()
-    print("─" * _W)
-    print(f"  Step 2/{total_steps} — Verifying signature")
-    print("─" * _W)
+    Instructions.step(2, total_steps, "Verifying signature")
     print()
 
     if not flasher.verify_signature():
@@ -298,22 +315,24 @@ def main() -> None:
         print("  ✗  Aborting — do not flash unverified images.")
         sys.exit(1)
 
-    print()
-    print("─" * _W)
-    print(f"  Step 3/{total_steps} — Extracting factory image")
-    print("─" * _W)
+    Instructions.step(3, total_steps, "Extracting factory image")
     print()
 
     flash_script_path = flasher.extract_files()
     if not flash_script_path:
         print()
-        print("  ✗  Extraction failed. The download may be corrupt; try again.")
+        print(
+            "  ✗  Extraction failed. The download may be corrupt; try again."
+        )
         sys.exit(1)
 
     if args.flash:
-        print()
-        result = flasher.flash(flash_script_path, manage_bootloader=args.bootloader_mgmt)
-        sys.exit(0 if result in (FlashResult.SUCCESS, FlashResult.CANCELLED) else 1)
+        result = flasher.flash(
+            flash_script_path, manage_bootloader=args.bootloader_mgmt
+        )
+        sys.exit(
+            0 if result in (FlashResult.SUCCESS, FlashResult.CANCELLED) else 1
+        )
     else:
         print(flasher.get_instructions(flash_script_path))
 

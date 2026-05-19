@@ -4,172 +4,308 @@ Unit tests for GrapheneOS Flasher CLI
 
 import sys
 from pathlib import Path
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import Mock, patch
+
 import pytest
 
-from grapheneos_flasher.cli import parse_args, validate_device, main, build_parser
+from grapheneos_flasher.cli import main, parse_args, validate_device
+from grapheneos_flasher.core import FlashResult
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Argument parsing
+# ─────────────────────────────────────────────────────────────────────────────
 
 
 class TestArgumentParsing:
-    """Test CLI argument parsing"""
 
     def test_parse_args_basic(self):
-        """Test basic argument parsing"""
-        test_args = ["shiba"]
-
-        with patch.object(sys, 'argv', ['grapheneos-flasher'] + test_args):
+        with patch.object(sys, "argv", ["grapheneos-flasher", "shiba"]):
             args = parse_args()
-
         assert args.device == "shiba"
         assert args.flash is False
+        assert args.sideload is False
         assert args.version is None
         assert args.work_dir is None
+        assert args.bootloader_mgmt is True
 
     def test_parse_args_with_flash(self):
-        """Test argument parsing with flash flag"""
-        test_args = ["shiba", "--flash"]
-
-        with patch.object(sys, 'argv', ['grapheneos-flasher'] + test_args):
+        with patch.object(
+            sys, "argv", ["grapheneos-flasher", "shiba", "--flash"]
+        ):
             args = parse_args()
-
-        assert args.device == "shiba"
         assert args.flash is True
+        assert args.sideload is False
+
+    def test_parse_args_with_sideload(self):
+        with patch.object(
+            sys, "argv", ["grapheneos-flasher", "shiba", "--sideload"]
+        ):
+            args = parse_args()
+        assert args.sideload is True
+        assert args.flash is False
+
+    def test_flash_and_sideload_mutually_exclusive(self):
+        with patch.object(
+            sys,
+            "argv",
+            ["grapheneos-flasher", "shiba", "--flash", "--sideload"],
+        ):
+            with pytest.raises(SystemExit):
+                parse_args()
 
     def test_parse_args_with_version(self):
-        """Test argument parsing with version"""
-        test_args = ["shiba", "--version", "2026050900"]
-
-        with patch.object(sys, 'argv', ['grapheneos-flasher'] + test_args):
+        with patch.object(
+            sys,
+            "argv",
+            ["grapheneos-flasher", "shiba", "--version", "2026050900"],
+        ):
             args = parse_args()
-
-        assert args.device == "shiba"
         assert args.version == "2026050900"
 
     def test_parse_args_with_work_dir(self):
-        """Test argument parsing with work directory"""
-        test_args = ["shiba", "--work-dir", "/tmp/test"]
-
-        with patch.object(sys, 'argv', ['grapheneos-flasher'] + test_args):
+        with patch.object(
+            sys,
+            "argv",
+            ["grapheneos-flasher", "shiba", "--work-dir", "/tmp/test"],
+        ):
             args = parse_args()
-
-        assert args.device == "shiba"
         assert args.work_dir == Path("/tmp/test")
+
+    def test_no_bootloader_mgmt_flag(self):
+        with patch.object(
+            sys,
+            "argv",
+            ["grapheneos-flasher", "shiba", "--flash", "--no-bootloader-mgmt"],
+        ):
+            args = parse_args()
+        assert args.bootloader_mgmt is False
+
+    def test_bootloader_mgmt_default_true(self):
+        with patch.object(
+            sys, "argv", ["grapheneos-flasher", "shiba", "--flash"]
+        ):
+            args = parse_args()
+        assert args.bootloader_mgmt is True
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Device validation
+# ─────────────────────────────────────────────────────────────────────────────
 
 
 class TestDeviceValidation:
-    """Test device codename validation"""
 
     def test_valid_device_codenames(self):
-        """Test valid device codenames"""
-        valid_devices = ["shiba", "husky", "panther", "cheetah", "oriole", "raven"]
-
-        for device in valid_devices:
+        for device in [
+            "shiba",
+            "husky",
+            "panther",
+            "cheetah",
+            "oriole",
+            "raven",
+            "caiman",
+        ]:
             assert validate_device(device) is True
 
     def test_invalid_device_codenames(self):
-        """Test invalid device codenames"""
         # Must be >= 3 chars, all lowercase alphabetic (no digits, dashes, underscores)
-        invalid_devices = ["", "a", "123", "SHIBA", "shiba123", "device-with-dash", "invalid_device"]
-
-        for device in invalid_devices:
+        for device in [
+            "",
+            "a",
+            "123",
+            "SHIBA",
+            "shiba123",
+            "device-with-dash",
+            "invalid_device",
+        ]:
             assert validate_device(device) is False
 
 
-class TestCLIErrorHandling:
-    """Test CLI error handling"""
-
-    def test_invalid_device_exits(self):
-        """Test CLI exits on invalid device via validation, not main execution"""
-        # This test should test the validation function directly
-        assert validate_device("invalid_device") is False
+# ─────────────────────────────────────────────────────────────────────────────
+# main() — shared fixture
+# ─────────────────────────────────────────────────────────────────────────────
 
 
-class TestMainFunction:
-    """Test main CLI function"""
+@pytest.fixture
+def mock_flasher(tmp_path):
+    """A pre-wired mock GrapheneOSFlasher instance."""
+    m = Mock()
+    m.config.device = "shiba"
+    m.config.version = "2026050900"
+    m.config.ota_filename = "shiba-ota_update-2026050900.zip"
+    m.work_dir = tmp_path
+    m.prepare_factory_image.return_value = True
+    m.prepare_ota.return_value = True
+    m.verify_signature.return_value = True
+    m.extract_files.return_value = tmp_path / "flash-all.sh"
+    m.flash.return_value = FlashResult.SUCCESS
+    m.device_manager.sideload_update.return_value = FlashResult.SUCCESS
+    return m
 
-    @pytest.fixture
-    def mock_flasher(self):
-        """Create a mock GrapheneOSFlasher for testing"""
-        mock_config = Mock()
-        mock_config.device = "shiba"
-        mock_config.version = "2026050900"
 
-        mock_flasher = Mock()
-        mock_flasher.config = mock_config
-        mock_flasher.prepare_factory_image.return_value = True
-        mock_flasher.verify_signature.return_value = True
-        mock_flasher.extract_files.return_value = Path("/tmp/flash.sh")
-        mock_flasher.flash.return_value = Mock()
-
-        return mock_flasher
-
-    def test_main_successful_download(self, mock_flasher):
-        """Test successful download without flash"""
-        test_args = ["shiba"]
-
-        with patch.object(sys, 'argv', ['grapheneos-flasher'] + test_args):
-            with patch('grapheneos_flasher.cli.GrapheneOSFlasher', return_value=mock_flasher):
-                with patch('grapheneos_flasher.cli.GrapheneOSFlasher.get_latest_release', return_value="2026050900"):
-                    with patch('builtins.print') as mock_print:
-                        main()
-
-        # Should have called the flasher methods
-        mock_flasher.prepare_factory_image.assert_called_once()
-        mock_flasher.verify_signature.assert_called_once()
-        mock_flasher.extract_files.assert_called_once()
-        # Should not have called flash since --flash was not passed
-        mock_flasher.flash.assert_not_called()
-
-    def test_main_successful_flash(self, mock_flasher):
-        """Test successful flashing"""
-        test_args = ["shiba", "--flash"]
-        from grapheneos_flasher.core import FlashResult
-
-        # Mock the return value to be the actual FlashResult enum
-        mock_flasher.flash.return_value = FlashResult.SUCCESS
-
-        with patch.object(sys, 'argv', ['grapheneos-flasher'] + test_args):
-            with patch('grapheneos_flasher.cli.GrapheneOSFlasher', return_value=mock_flasher):
-                with patch('grapheneos_flasher.cli.GrapheneOSFlasher.get_latest_release', return_value="2026050900"):
-                    # Just test that the function calls are made correctly
-                    try:
-                        main()
-                    except SystemExit as e:
-                        # Don't worry about the exact exit code for this test
-                        pass
-
-        # Should have called all flasher methods including flash
-        mock_flasher.prepare_factory_image.assert_called_once()
-        mock_flasher.verify_signature.assert_called_once()
-        mock_flasher.extract_files.assert_called_once()
-        mock_flasher.flash.assert_called_once()
-
-    def test_main_failed_preparation(self, mock_flasher):
-        """Test failure during file preparation"""
-        test_args = ["shiba"]
-        mock_flasher.prepare_factory_image.return_value = False
-
-        with patch.object(sys, 'argv', ['grapheneos-flasher'] + test_args):
-            with patch('grapheneos_flasher.cli.GrapheneOSFlasher', return_value=mock_flasher):
-                with patch('grapheneos_flasher.cli.GrapheneOSFlasher.get_latest_release', return_value="2026050900"):
-                    with patch('sys.exit') as mock_exit:
-                        main()
-
-        # Should have exited after failed preparation
-        mock_exit.assert_called_with(1)
-
-    def test_main_failed_verification(self, mock_flasher):
-        """Test failure during signature verification"""
-        test_args = ["shiba"]
-        mock_flasher.verify_signature.return_value = False
-
-        with patch.object(sys, 'argv', ['grapheneos-flasher'] + test_args):
-            with patch('grapheneos_flasher.cli.GrapheneOSFlasher', return_value=mock_flasher):
-                with patch('grapheneos_flasher.cli.GrapheneOSFlasher.get_latest_release', return_value="2026050900"):
-                    with patch('builtins.print') as mock_print:
+def _run_main(argv, flasher_mock):
+    """Patch environment and run main(), returning the SystemExit code if raised."""
+    with patch.object(sys, "argv", argv):
+        with patch(
+            "grapheneos_flasher.cli.GrapheneOSFlasher",
+            return_value=flasher_mock,
+        ):
+            with patch(
+                "grapheneos_flasher.cli.GrapheneOSFlasher.get_latest_release",
+                return_value="2026050900",
+            ):
+                with patch(
+                    "grapheneos_flasher.cli.DeviceManager.check_fastboot_available",
+                    return_value=True,
+                ):
+                    with patch(
+                        "grapheneos_flasher.cli.DeviceManager.check_adb_available",
+                        return_value=True,
+                    ):
                         try:
                             main()
+                            return 0
                         except SystemExit as e:
-                            assert e.code == 1
+                            return e.code
 
-        # Verification failure should cause a sys.exit(1)
+
+# ─────────────────────────────────────────────────────────────────────────────
+# main() — dry-run (download & verify only)
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class TestMainDryRun:
+
+    def test_calls_pipeline_without_flash(self, mock_flasher):
+        _run_main(["grapheneos-flasher", "shiba"], mock_flasher)
+
+        mock_flasher.prepare_factory_image.assert_called_once()
+        mock_flasher.verify_signature.assert_called_once()
+        mock_flasher.extract_files.assert_called_once()
+        mock_flasher.flash.assert_not_called()
+
+    def test_exits_zero_on_success(self, mock_flasher):
+        code = _run_main(["grapheneos-flasher", "shiba"], mock_flasher)
+        assert code == 0
+
+    def test_exits_one_on_download_failure(self, mock_flasher):
+        mock_flasher.prepare_factory_image.return_value = False
+        code = _run_main(["grapheneos-flasher", "shiba"], mock_flasher)
+        assert code == 1
+
+    def test_exits_one_on_verification_failure(self, mock_flasher):
+        mock_flasher.verify_signature.return_value = False
+        code = _run_main(["grapheneos-flasher", "shiba"], mock_flasher)
+        assert code == 1
+
+    def test_exits_one_on_extraction_failure(self, mock_flasher):
+        mock_flasher.extract_files.return_value = None
+        code = _run_main(["grapheneos-flasher", "shiba"], mock_flasher)
+        assert code == 1
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# main() — flash mode
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class TestMainFlash:
+
+    def test_calls_flash_with_bootloader_mgmt_on(self, mock_flasher, tmp_path):
+        script = tmp_path / "flash-all.sh"
+        mock_flasher.extract_files.return_value = script
+
+        _run_main(["grapheneos-flasher", "shiba", "--flash"], mock_flasher)
+
+        mock_flasher.flash.assert_called_once_with(
+            script, manage_bootloader=True
+        )
+
+    def test_calls_flash_with_bootloader_mgmt_off(
+        self, mock_flasher, tmp_path
+    ):
+        script = tmp_path / "flash-all.sh"
+        mock_flasher.extract_files.return_value = script
+
+        _run_main(
+            ["grapheneos-flasher", "shiba", "--flash", "--no-bootloader-mgmt"],
+            mock_flasher,
+        )
+
+        mock_flasher.flash.assert_called_once_with(
+            script, manage_bootloader=False
+        )
+
+    def test_exits_zero_on_success(self, mock_flasher):
+        mock_flasher.flash.return_value = FlashResult.SUCCESS
+        code = _run_main(
+            ["grapheneos-flasher", "shiba", "--flash"], mock_flasher
+        )
+        assert code == 0
+
+    def test_exits_zero_on_cancelled(self, mock_flasher):
+        mock_flasher.flash.return_value = FlashResult.CANCELLED
+        code = _run_main(
+            ["grapheneos-flasher", "shiba", "--flash"], mock_flasher
+        )
+        assert code == 0
+
+    def test_exits_one_on_flash_failure(self, mock_flasher):
+        mock_flasher.flash.return_value = FlashResult.FAILED_FLASH
+        code = _run_main(
+            ["grapheneos-flasher", "shiba", "--flash"], mock_flasher
+        )
+        assert code == 1
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# main() — sideload mode
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class TestMainSideload:
+
+    def test_calls_prepare_ota_not_factory_image(self, mock_flasher):
+        _run_main(["grapheneos-flasher", "shiba", "--sideload"], mock_flasher)
+
+        mock_flasher.prepare_ota.assert_called_once()
+        mock_flasher.prepare_factory_image.assert_not_called()
+        mock_flasher.verify_signature.assert_not_called()
+        mock_flasher.extract_files.assert_not_called()
+
+    def test_calls_sideload_update(self, mock_flasher, tmp_path):
+        # Create the OTA file so the path check passes
+        ota = tmp_path / "shiba-ota_update-2026050900.zip"
+        ota.write_bytes(b"fake ota")
+
+        _run_main(["grapheneos-flasher", "shiba", "--sideload"], mock_flasher)
+
+        mock_flasher.device_manager.sideload_update.assert_called_once()
+
+    def test_exits_zero_on_success(self, mock_flasher, tmp_path):
+        ota = tmp_path / "shiba-ota_update-2026050900.zip"
+        ota.write_bytes(b"fake ota")
+        mock_flasher.device_manager.sideload_update.return_value = (
+            FlashResult.SUCCESS
+        )
+
+        code = _run_main(
+            ["grapheneos-flasher", "shiba", "--sideload"], mock_flasher
+        )
+        assert code == 0
+
+    def test_exits_zero_on_cancelled(self, mock_flasher):
+        mock_flasher.device_manager.sideload_update.return_value = (
+            FlashResult.CANCELLED
+        )
+        code = _run_main(
+            ["grapheneos-flasher", "shiba", "--sideload"], mock_flasher
+        )
+        assert code == 0
+
+    def test_exits_one_on_ota_download_failure(self, mock_flasher):
+        mock_flasher.prepare_ota.return_value = False
+        code = _run_main(
+            ["grapheneos-flasher", "shiba", "--sideload"], mock_flasher
+        )
+        assert code == 1
