@@ -56,9 +56,6 @@ class Device(StrEnum):
         """Look up a device by codename, returning None if unknown."""
         return cls._member_map_.get(codename)  # type: ignore[return-value]
 
-    def __str__(self) -> str:
-        return f"{self.name} ({self.value})"
-
 
 DEVICE_TABLE = "\n".join(
     f"  {d.name:<14} {d.value}" for d in sorted(Device, key=lambda d: d.value)
