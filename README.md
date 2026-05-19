@@ -139,6 +139,10 @@ If the directory does not exist the tool falls back to a system temp directory.
 | `raven` | Pixel 6 Pro |
 | `bluejay` | Pixel 6a |
 
+Devices are modelled by the `Device` enum in `cli.py` — member name is the
+codename, value is the display name. `Device.from_codename(s)` returns the
+member or `None` for unknown inputs.
+
 For the authoritative list see
 [grapheneos.org/faq#device-support](https://grapheneos.org/faq#device-support).
 
