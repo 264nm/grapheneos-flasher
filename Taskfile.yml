@@ -1,0 +1,46 @@
+version: "3"
+
+tasks:
+  # ── Individual steps (mirrors CI exactly) ────────────────────────────────────
+
+  install:
+    desc: Install all dependencies (including dev)
+    cmd: uv sync --extra dev
+
+  test:
+    desc: Run the test suite
+    cmd: uv run python -m pytest --tb=short -q
+
+  typecheck:
+    desc: Run mypy type checking
+    cmd: uv run mypy grapheneos_flasher
+
+  format:
+    desc: Auto-format code with black and isort
+    cmd: |
+      uv run black grapheneos_flasher tests
+      uv run isort grapheneos_flasher tests
+
+  format:check:
+    desc: Check formatting without modifying files (as CI does)
+    cmd: |
+      uv run black --check grapheneos_flasher tests
+      uv run isort --check grapheneos_flasher tests
+
+  lint:
+    desc: Run flake8 linter
+    cmd: uv run flake8 grapheneos_flasher tests
+
+  # ── Composite tasks ───────────────────────────────────────────────────────────
+
+  ci:
+    desc: Run all CI checks in order (test → typecheck → format:check → lint)
+    cmds:
+      - task: test
+      - task: typecheck
+      - task: format:check
+      - task: lint
+
+  build:
+    desc: Build the package (wheel + sdist)
+    cmd: uv build

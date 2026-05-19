@@ -141,14 +141,26 @@ wheels = [
 ]
 
 [[package]]
+name = "flake8-pyproject"
+version = "1.2.4"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "flake8" },
+]
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/85/6a/cdee9ff7f2b7c6ddc219fd95b7c70c0a3d9f0367a506e9793eedfc72e337/flake8_pyproject-1.2.4-py3-none-any.whl", hash = "sha256:ea34c057f9a9329c76d98723bb2bb498cc6ba8ff9872c4d19932d48c91249a77", size = 5694, upload-time = "2025-11-28T21:40:01.309Z" },
+]
+
+[[package]]
 name = "grapheneos-flasher"
-version = "1.0.0"
+version = "0.1.0"
 source = { editable = "." }
 
 [package.optional-dependencies]
 dev = [
     { name = "black" },
     { name = "flake8" },
+    { name = "flake8-pyproject" },
     { name = "isort" },
     { name = "mypy" },
     { name = "pytest" },
@@ -161,6 +173,7 @@ dev = [
 requires-dist = [
     { name = "black", marker = "extra == 'dev'", specifier = ">=24.0.0" },
     { name = "flake8", marker = "extra == 'dev'", specifier = ">=7.0.0" },
+    { name = "flake8-pyproject", marker = "extra == 'dev'", specifier = ">=1.2.0" },
     { name = "isort", marker = "extra == 'dev'", specifier = ">=5.0.0" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.0.0" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0.0" },
