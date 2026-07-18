@@ -51,3 +51,31 @@ jobs:
           files: dist/*
           generate_release_notes: true
           fail_on_unmatched_files: true
+
+      - name: Upload dist for PyPI job
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: dist
+          path: dist/
+
+  # ── Publish to PyPI via Trusted Publishing (OIDC, no tokens) ────────────────
+  pypi:
+    name: Publish to PyPI
+    runs-on: ubuntu-latest
+    needs: release
+    environment:
+      name: pypi
+      url: https://pypi.org/p/grapheneos-flasher
+
+    permissions:
+      id-token: write   # required for PyPI Trusted Publishing
+
+    steps:
+      - name: Download dist
+        uses: actions/download-artifact@v8.0.1
+        with:
+          name: dist
+          path: dist/
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@v1.14.0

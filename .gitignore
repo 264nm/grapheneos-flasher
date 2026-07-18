@@ -2,6 +2,7 @@
 allowed_signers
 *.zip
 *.zip.sig
+*-install-*/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
