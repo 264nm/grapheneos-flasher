@@ -96,7 +96,15 @@ class TestArgumentParsing:
 class TestDevice:
 
     def test_known_codenames_resolve(self):
-        for codename in ("shiba", "husky", "oriole", "caiman", "tokay", "komodo", "frankel"):
+        for codename in (
+            "shiba",
+            "husky",
+            "oriole",
+            "caiman",
+            "tokay",
+            "komodo",
+            "frankel",
+        ):
             assert Device.from_codename(codename) is not None
 
     def test_unknown_codename_returns_none(self):
