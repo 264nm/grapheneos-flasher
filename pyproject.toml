@@ -1,10 +1,10 @@
 [project]
 name = "grapheneos-flasher"
-version = "0.1.0"
+version = "0.1.1"
 description = "Automated GrapheneOS flashing with security verification"
 readme = "README.md"
 authors = [
-    {name = "Developer Name", email = "developer@example.com"}
+    {name = "264nm"}
 ]
 license = {text = "MIT"}
 requires-python = ">=3.14"

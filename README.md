@@ -26,26 +26,27 @@ and add the extracted directory to your `PATH`.
 
 ## Installation
 
-This tool is not yet published to PyPI. Run it directly from source using
-[uv](https://docs.astral.sh/uv/):
+### From PyPI (recommended)
 
 ```bash
-git clone https://github.com/yourusername/grapheneos-flasher
+uv tool install grapheneos-flasher
+# or
+pip install grapheneos-flasher
+```
+
+Then run:
+
+```bash
+grapheneos-flasher <device_codename> [options]
+```
+
+### From source
+
+```bash
+git clone https://github.com/264nm/grapheneos-flasher
 cd grapheneos-flasher
 uv sync
-```
-
-Run the tool with:
-
-```bash
 uv run grapheneos-flasher <device_codename> [options]
-```
-
-Or activate the virtual environment first:
-
-```bash
-source .venv/bin/activate
-grapheneos-flasher <device_codename> [options]
 ```
 
 ---
