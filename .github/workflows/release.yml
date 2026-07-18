@@ -2,14 +2,49 @@ name: Release
 
 on:
   push:
+    branches: [main]
     tags:
       - "v*.*.*"
 
 jobs:
+  # ── Gate: decide whether this push should produce a release ─────────────────
+  check:
+    name: Check version
+    runs-on: ubuntu-latest
+
+    outputs:
+      release: ${{ steps.version.outputs.release }}
+      tag: ${{ steps.version.outputs.tag }}
+
+    steps:
+      - uses: actions/checkout@v6.0.2
+
+      - name: Determine version and whether to release
+        id: version
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            # Manual tag push: always release under that tag.
+            echo "tag=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
+            echo "release=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          VERSION=$(grep -Po '(?<=^__version__ = ")[^"]+' grapheneos_flasher/__init__.py)
+          TAG="v$VERSION"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          if git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null; then
+            echo "Tag $TAG already exists — nothing to release."
+            echo "release=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "Version bumped to $VERSION — releasing as $TAG."
+            echo "release=true" >> "$GITHUB_OUTPUT"
+          fi
+
   # ── Gate: tests must pass before anything is published ──────────────────────
   test:
     name: Test
     runs-on: ubuntu-latest
+    needs: check
+    if: needs.check.outputs.release == 'true'
 
     steps:
       - uses: actions/checkout@v6.0.2
@@ -29,10 +64,10 @@ jobs:
   release:
     name: Release
     runs-on: ubuntu-latest
-    needs: test
+    needs: [check, test]
 
     permissions:
-      contents: write   # required to create the GitHub release
+      contents: write   # required to create the tag and the GitHub release
 
     steps:
       - uses: actions/checkout@v6.0.2
@@ -48,6 +83,10 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v3.0.0
         with:
+          # On a main push the tag does not exist yet; the release action
+          # creates it at the triggering commit.
+          tag_name: ${{ needs.check.outputs.tag }}
+          target_commitish: ${{ github.sha }}
           files: dist/*
           generate_release_notes: true
           fail_on_unmatched_files: true
