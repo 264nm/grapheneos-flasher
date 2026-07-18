@@ -1,6 +1,6 @@
 [project]
 name = "grapheneos-flasher"
-version = "0.3.0"
+dynamic = ["version"]
 description = "Automated GrapheneOS flashing with security verification"
 readme = "README.md"
 authors = [
@@ -28,6 +28,9 @@ grapheneos-flasher = "grapheneos_flasher.cli:main"
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+[tool.hatch.version]
+path = "grapheneos_flasher/__init__.py"
 
 [project.optional-dependencies]
 dev = [

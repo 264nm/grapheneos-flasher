@@ -241,6 +241,29 @@ uv run isort grapheneos_flasher tests
 uv run flake8 grapheneos_flasher tests
 ```
 
+### Releasing
+
+The version lives in exactly one place:
+`grapheneos_flasher/__init__.py` (`__version__`). `pyproject.toml` reads
+it dynamically via hatchling, and the CLI banner imports it at runtime.
+
+To cut a release, bump `__version__` and merge to `main` — CI does the
+rest:
+
+1. The release workflow runs on every push to `main` and compares
+   `__version__` against the existing git tags.
+2. If tag `v<version>` does not exist yet, it runs the test suite, then
+   creates the tag and a GitHub Release (with build artifacts and
+   generated notes) at that commit.
+3. The wheel and sdist are published to PyPI via trusted publishing.
+
+Pushes without a version bump skip all of this — only the cheap version
+check runs. Manually pushing a `v*.*.*` tag still triggers the same
+release path, as an escape hatch.
+
+After bumping, run `uv lock` so `uv.lock` picks up the new project
+version.
+
 ---
 
 ## License
