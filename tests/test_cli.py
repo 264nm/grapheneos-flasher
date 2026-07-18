@@ -96,16 +96,27 @@ class TestArgumentParsing:
 class TestDevice:
 
     def test_known_codenames_resolve(self):
-        for codename in ("shiba", "husky", "oriole", "caiman", "tokay"):
+        for codename in (
+            "shiba",
+            "husky",
+            "oriole",
+            "caiman",
+            "tokay",
+            "komodo",
+            "frankel",
+        ):
             assert Device.from_codename(codename) is not None
 
     def test_unknown_codename_returns_none(self):
         assert Device.from_codename("unknown") is None
+        assert Device.from_codename("axolotl") is None
 
     def test_values_are_display_names(self):
         assert Device.shiba.value == "Pixel 8"
         assert Device.oriole.value == "Pixel 6"
-        assert Device.tokay.value == "Pixel 9a"
+        assert Device.tokay.value == "Pixel 9"
+        assert Device.tegu.value == "Pixel 9a"
+        assert Device.frankel.value == "Pixel 10"
 
     def test_codenames_are_lowercase_alpha(self):
         assert all(d.name.isalpha() and d.name.islower() for d in Device)

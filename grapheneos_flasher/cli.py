@@ -25,16 +25,22 @@ from grapheneos_flasher.ui import Instructions
 class Device(StrEnum):
     """Supported GrapheneOS devices. Member name = codename, value = display name."""
 
+    # Pixel 10 series
+    frankel = "Pixel 10"
+    blazer = "Pixel 10 Pro"
+    mustang = "Pixel 10 Pro XL"
+    rango = "Pixel 10 Pro Fold"
+    stallion = "Pixel 10a"
     # Pixel 9 series
-    tokay = "Pixel 9a"
-    akita = "Pixel 9"
-    comet = "Pixel 9 Pro"
-    caiman = "Pixel 9 Pro XL"
-    tegu = "Pixel 9 Pro Fold"
+    tokay = "Pixel 9"
+    caiman = "Pixel 9 Pro"
+    komodo = "Pixel 9 Pro XL"
+    comet = "Pixel 9 Pro Fold"
+    tegu = "Pixel 9a"
     # Pixel 8 series
     shiba = "Pixel 8"
     husky = "Pixel 8 Pro"
-    axolotl = "Pixel 8a"
+    akita = "Pixel 8a"
     felix = "Pixel Fold"
     tangorpro = "Pixel Tablet"
     # Pixel 7 series
