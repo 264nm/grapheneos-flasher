@@ -123,14 +123,19 @@ If the directory does not exist the tool falls back to a system temp directory.
 
 | Codename | Device |
 |----------|--------|
-| `tokay` | Pixel 9a |
-| `akita` | Pixel 9 |
-| `comet` | Pixel 9 Pro |
-| `caiman` | Pixel 9 Pro XL |
-| `tegu` | Pixel 9 Pro Fold |
+| `frankel` | Pixel 10 |
+| `blazer` | Pixel 10 Pro |
+| `mustang` | Pixel 10 Pro XL |
+| `rango` | Pixel 10 Pro Fold |
+| `stallion` | Pixel 10a |
+| `tokay` | Pixel 9 |
+| `caiman` | Pixel 9 Pro |
+| `komodo` | Pixel 9 Pro XL |
+| `comet` | Pixel 9 Pro Fold |
+| `tegu` | Pixel 9a |
 | `shiba` | Pixel 8 |
 | `husky` | Pixel 8 Pro |
-| `axolotl` | Pixel 8a |
+| `akita` | Pixel 8a |
 | `felix` | Pixel Fold |
 | `tangorpro` | Pixel Tablet |
 | `panther` | Pixel 7 |
