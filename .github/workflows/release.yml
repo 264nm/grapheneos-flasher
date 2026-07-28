@@ -17,7 +17,7 @@ jobs:
       tag: ${{ steps.version.outputs.tag }}
 
     steps:
-      - uses: actions/checkout@v6.0.2
+      - uses: actions/checkout@v7.0.1
 
       - name: Determine version and whether to release
         id: version
@@ -47,7 +47,7 @@ jobs:
     if: needs.check.outputs.release == 'true'
 
     steps:
-      - uses: actions/checkout@v6.0.2
+      - uses: actions/checkout@v7.0.1
 
       - name: Set up uv
         uses: astral-sh/setup-uv@v8.1.0
@@ -70,7 +70,7 @@ jobs:
       contents: write   # required to create the tag and the GitHub release
 
     steps:
-      - uses: actions/checkout@v6.0.2
+      - uses: actions/checkout@v7.0.1
 
       - name: Set up uv
         uses: astral-sh/setup-uv@v8.1.0
