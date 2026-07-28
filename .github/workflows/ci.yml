@@ -30,6 +30,9 @@ jobs:
       - name: Run tests
         run: uv run python -m pytest --tb=short -q
 
+      - name: Validate bundled device data
+        run: uv run python scripts/update_devices.py --check
+
       - name: Type check
         run: uv run mypy grapheneos_flasher
 

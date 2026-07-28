@@ -15,42 +15,24 @@ from grapheneos_flasher.core import (
     FlashResult,
     GrapheneOSFlasher,
 )
+from grapheneos_flasher.devices import (
+    EOLDeviceError,
+    check_device,
+    get_device_support,
+    load_bundled,
+)
 from grapheneos_flasher.ui import Instructions
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Known supported devices  (see https://grapheneos.org/faq#device-support)
+#
+# Built from the snapshot bundled with the package, which CI refreshes from
+# the FAQ. Live data is fetched at runtime; this backs --help and offline use.
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-class Device(StrEnum):
+class _Device(StrEnum):
     """Supported GrapheneOS devices. Member name = codename, value = display name."""
-
-    # Pixel 10 series
-    frankel = "Pixel 10"
-    blazer = "Pixel 10 Pro"
-    mustang = "Pixel 10 Pro XL"
-    rango = "Pixel 10 Pro Fold"
-    stallion = "Pixel 10a"
-    # Pixel 9 series
-    tokay = "Pixel 9"
-    caiman = "Pixel 9 Pro"
-    komodo = "Pixel 9 Pro XL"
-    comet = "Pixel 9 Pro Fold"
-    tegu = "Pixel 9a"
-    # Pixel 8 series
-    shiba = "Pixel 8"
-    husky = "Pixel 8 Pro"
-    akita = "Pixel 8a"
-    felix = "Pixel Fold"
-    tangorpro = "Pixel Tablet"
-    # Pixel 7 series
-    panther = "Pixel 7"
-    cheetah = "Pixel 7 Pro"
-    lynx = "Pixel 7a"
-    # Pixel 6 series
-    oriole = "Pixel 6"
-    raven = "Pixel 6 Pro"
-    bluejay = "Pixel 6a"
 
     @classmethod
     def codenames(cls) -> set[str]:
@@ -58,10 +40,17 @@ class Device(StrEnum):
         return {d.name for d in cls}
 
     @classmethod
-    def from_codename(cls, codename: str) -> "Device | None":
+    def from_codename(cls, codename: str) -> "_Device | None":
         """Look up a device by codename, returning None if unknown."""
         return cls._member_map_.get(codename)  # type: ignore[return-value]
 
+
+# Members come from the bundled snapshot rather than being written out by
+# hand, so the list cannot drift from what GrapheneOS publishes. mypy does
+# not model the functional Enum API, hence the annotation and ignore.
+Device: type[_Device] = _Device(  # type: ignore[assignment,call-arg]
+    "Device", load_bundled().supported
+)
 
 DEVICE_TABLE = "\n".join(
     f"  {d.name:<14} {d.value}" for d in sorted(Device, key=lambda d: d.value)
@@ -182,6 +171,47 @@ def warn_unknown_device(device: str) -> None:
         print()
 
 
+def check_device_support(device: str) -> None:
+    """
+    Check the device against GrapheneOS support data.
+
+    Exits with an error for end-of-life devices, warns when OEM support
+    ends soon, and falls back to the bundled snapshot when the live data
+    cannot be fetched.
+    """
+    support, is_live = get_device_support()
+
+    if not is_live:
+        Instructions.warn(
+            "Could not fetch the live device list — using the bundled copy"
+            f" ({support.generated or 'unknown date'})."
+        )
+        print()
+
+    try:
+        warning = check_device(device, support)
+    except EOLDeviceError as exc:
+        Instructions.fail(f"{exc.name} ({exc.codename}) is end-of-life.")
+        Instructions.block(
+            "     GrapheneOS no longer publishes builds for this device and\n"
+            "     it no longer receives security updates.\n"
+            "     See: https://grapheneos.org/faq#legacy-devices"
+        )
+        sys.exit(1)
+
+    if warning:
+        Instructions.warn(warning)
+        Instructions.block(
+            "     After that date the device stops receiving full security\n"
+            "     updates. Consider moving to a newer device.\n"
+            "     See: https://grapheneos.org/faq#device-lifetime"
+        )
+        print()
+
+    if device not in support.supported:
+        warn_unknown_device(device)
+
+
 def resolve_work_dir(specified: Path | None) -> Path:
     """
     Resolve the working directory for downloads:
@@ -253,7 +283,7 @@ def main() -> None:
         sys.exit(1)
 
     print()
-    warn_unknown_device(args.device)
+    check_device_support(args.device)
 
     # ── Tool prerequisites ────────────────────────────────────────────────────
     if args.flash or args.sideload:

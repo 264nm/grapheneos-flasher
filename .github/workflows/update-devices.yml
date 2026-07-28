@@ -1,0 +1,68 @@
+name: Update device list
+
+on:
+  schedule:
+    # Weekly, Monday 06:00 UTC
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  update:
+    name: Refresh bundled device data
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6.0.2
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v8.1.0
+        with:
+          python-version: "3.14"
+
+      - name: Install dependencies
+        run: uv sync --extra dev
+
+      - name: Refresh device data
+        run: uv run python scripts/update_devices.py
+
+      - name: Check for changes
+        id: diff
+        run: |
+          if git diff --quiet -- grapheneos_flasher/data/devices.json; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            git diff --stat -- grapheneos_flasher/data/devices.json
+          fi
+
+      - name: Open pull request
+        if: steps.diff.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          BRANCH="chore/update-devices"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -B "$BRANCH"
+          git add grapheneos_flasher/data/devices.json
+          git commit -m "Chore: refresh bundled device list from grapheneos.org"
+          git push --force origin "$BRANCH"
+
+          if [ -z "$(gh pr list --head "$BRANCH" --state open --json number --jq '.[].number')" ]; then
+            cat > /tmp/pr-body.md <<'BODY'
+          The GrapheneOS FAQ device list has changed. This updates the snapshot
+          bundled with the package, which backs the `--help` output and is used
+          as the offline fallback.
+
+          Generated automatically by the `update-devices` workflow.
+          BODY
+            gh pr create \
+              --base main \
+              --head "$BRANCH" \
+              --title "Chore: refresh bundled device list" \
+              --body-file /tmp/pr-body.md
+          fi
