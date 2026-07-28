@@ -273,6 +273,46 @@ uv run isort grapheneos_flasher tests
 uv run flake8 grapheneos_flasher tests
 ```
 
+### End-to-end tests
+
+Two e2e suites live in `tests/e2e/`:
+
+**Stub device harness** (`-m e2e`, hermetic — runs in normal CI). Drives
+the real CLI as a subprocess: downloads from a local HTTP server serving
+a miniature ssh-signed release, verifies the signature with real
+`ssh-keygen`, extracts, and walks the full bootloader state machine
+(locked → unlocked → flashed → locked) against stub `fastboot`/`adb`
+binaries that log every invocation.
+
+```bash
+uv run python -m pytest tests/e2e -m e2e
+```
+
+**Pixel emulator** (`-m emulator` — separate CI job). Runs against a real
+Android device stack: a booted Pixel-profile AVD reached through real
+platform-tools. Covers adb device detection and pins down why the flash
+pipeline can't be emulator-tested (AVDs have no bootloader, so fastboot
+never sees one).
+
+These tests **skip unless an emulator is actually booted** — a bare
+`pytest -m emulator` on a machine with no running AVD reports all tests
+as skipped, which is expected, not a failure.
+
+```bash
+task emulator:start        # downloads + creates the AVD on first run, then boots it
+task test:e2e:emulator
+task emulator:stop
+```
+
+`emulator:setup` (run automatically by `emulator:start`) needs the Android
+SDK command-line tools and a JDK. It defaults to `~/Library/Android/sdk`
+and the JDK bundled with Android Studio; override with `ANDROID_HOME` and
+`JAVA_HOME`. The AVD uses an arm64 API 34 image — edit `SYSTEM_IMAGE` in
+`Taskfile.yml` for an x86_64 host.
+
+To point the flasher (or tests) at a release mirror, set
+`GRAPHENEOS_FLASHER_BASE_URL`.
+
 ### Releasing
 
 The version lives in exactly one place:
