@@ -145,9 +145,41 @@ If the directory does not exist the tool falls back to a system temp directory.
 | `raven` | Pixel 6 Pro |
 | `bluejay` | Pixel 6a |
 
-Devices are modelled by the `Device` enum in `cli.py` — member name is the
-codename, value is the display name. `Device.from_codename(s)` returns the
-member or `None` for unknown inputs.
+The table above is a snapshot. The device list is checked live on every run,
+so it stays correct without waiting for a release.
+
+### Device support checks
+
+On each run the tool fetches the current device list from the GrapheneOS FAQ
+and checks the device you asked for:
+
+- **End-of-life device** — the run stops before anything is downloaded:
+
+  ```
+    ✗  Pixel 5 (redfin) is end-of-life.
+       GrapheneOS no longer publishes builds for this device and
+       it no longer receives security updates.
+  ```
+
+- **Support ending within three months** — a warning, then the run continues:
+
+  ```
+    ⚠  OEM support for the Pixel 6 ends October 2026.
+       After that date the device stops receiving full security
+       updates. Consider moving to a newer device.
+  ```
+
+- **Supported device** — no message.
+
+If the FAQ cannot be reached, the tool says so and falls back to the snapshot
+bundled with the package (`grapheneos_flasher/data/devices.json`), so it still
+works offline. That snapshot is refreshed weekly by the `update-devices`
+workflow, which opens a pull request whenever GrapheneOS changes the list — it
+is generated, not hand-edited. To refresh it locally:
+
+```bash
+uv run python scripts/update_devices.py
+```
 
 For the authoritative list see
 [grapheneos.org/faq#device-support](https://grapheneos.org/faq#device-support).

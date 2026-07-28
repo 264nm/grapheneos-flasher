@@ -3,6 +3,7 @@ Unit tests for GrapheneOS Flasher CLI
 """
 
 import sys
+from datetime import date
 from pathlib import Path
 from unittest.mock import Mock, patch
 
@@ -10,6 +11,7 @@ import pytest
 
 from grapheneos_flasher.cli import Device, main, parse_args, validate_device
 from grapheneos_flasher.core import FlashResult
+from grapheneos_flasher.devices import DeviceSupport, load_bundled
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Argument parsing
@@ -188,30 +190,37 @@ def mock_flasher(tmp_path):
     return m
 
 
-def _run_main(argv, flasher_mock):
+def _run_main(argv, flasher_mock, support=None):
     """Patch environment and run main(), returning the SystemExit code if raised."""
+    # Device support is patched so the suite never touches the network;
+    # by default it resolves to the bundled snapshot.
+    support = support if support is not None else load_bundled()
     with patch.object(sys, "argv", argv):
         with patch(
-            "grapheneos_flasher.cli.GrapheneOSFlasher",
-            return_value=flasher_mock,
+            "grapheneos_flasher.cli.get_device_support",
+            return_value=(support, True),
         ):
             with patch(
-                "grapheneos_flasher.cli.GrapheneOSFlasher.get_latest_release",
-                return_value="2026050900",
+                "grapheneos_flasher.cli.GrapheneOSFlasher",
+                return_value=flasher_mock,
             ):
                 with patch(
-                    "grapheneos_flasher.cli.DeviceManager.check_fastboot_available",
-                    return_value=True,
+                    "grapheneos_flasher.cli.GrapheneOSFlasher.get_latest_release",
+                    return_value="2026050900",
                 ):
                     with patch(
-                        "grapheneos_flasher.cli.DeviceManager.check_adb_available",
+                        "grapheneos_flasher.cli.DeviceManager.check_fastboot_available",
                         return_value=True,
                     ):
-                        try:
-                            main()
-                            return 0
-                        except SystemExit as e:
-                            return e.code
+                        with patch(
+                            "grapheneos_flasher.cli.DeviceManager.check_adb_available",
+                            return_value=True,
+                        ):
+                            try:
+                                main()
+                                return 0
+                            except SystemExit as e:
+                                return e.code
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -354,3 +363,106 @@ class TestMainSideload:
             ["grapheneos-flasher", "shiba", "--sideload"], mock_flasher
         )
         assert code == 1
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# main() — device support / EOL handling
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def _months_from_now(months: int) -> date:
+    """A date `months` whole months ahead of today, for date-independent tests."""
+    today = date.today()
+    month = today.month + months
+    year = today.year + (month - 1) // 12
+    return date(year, (month - 1) % 12 + 1, 1)
+
+
+@pytest.fixture
+def support():
+    """Support data with one healthy, one near-EOL, and one dead device."""
+    return DeviceSupport(
+        supported={"shiba": "Pixel 8", "oriole": "Pixel 6"},
+        eol={"redfin": "Pixel 5"},
+        support_end={
+            # Relative to today so these cases stay valid as time passes.
+            "shiba": _months_from_now(48),
+            "oriole": _months_from_now(2),
+        },
+        generated="2026-07-28",
+    )
+
+
+class TestDeviceSupportChecks:
+
+    def test_eol_device_aborts(self, mock_flasher, support, capsys):
+        code = _run_main(
+            ["grapheneos-flasher", "redfin"], mock_flasher, support=support
+        )
+        out = capsys.readouterr().out
+
+        assert code == 1
+        assert "end-of-life" in out
+        assert "Pixel 5" in out
+        # Nothing should have been downloaded.
+        mock_flasher.prepare_factory_image.assert_not_called()
+
+    def test_near_eol_device_warns_and_continues(
+        self, mock_flasher, support, capsys
+    ):
+        code = _run_main(
+            ["grapheneos-flasher", "oriole"], mock_flasher, support=support
+        )
+        out = capsys.readouterr().out
+        ends = support.support_end["oriole"].strftime("%B %Y")
+
+        assert code == 0
+        assert "⚠" in out
+        assert f"ends {ends}" in out
+        assert "Pixel 6" in out
+        # A near-EOL device is a warning, not a blocker.
+        mock_flasher.prepare_factory_image.assert_called_once()
+
+    def test_supported_device_is_quiet(self, mock_flasher, support, capsys):
+        code = _run_main(
+            ["grapheneos-flasher", "shiba"], mock_flasher, support=support
+        )
+        out = capsys.readouterr().out
+
+        assert code == 0
+        assert "end-of-life" not in out
+        assert "not in the known device list" not in out
+
+    def test_unknown_device_still_warns(self, mock_flasher, support, capsys):
+        code = _run_main(
+            ["grapheneos-flasher", "notadevice"], mock_flasher, support=support
+        )
+        out = capsys.readouterr().out
+
+        assert code == 0
+        assert "not in the known device list" in out
+
+    def test_fallback_to_bundled_is_announced(
+        self, mock_flasher, support, capsys
+    ):
+        with patch.object(sys, "argv", ["grapheneos-flasher", "shiba"]):
+            with patch(
+                "grapheneos_flasher.cli.get_device_support",
+                return_value=(support, False),
+            ):
+                with patch(
+                    "grapheneos_flasher.cli.GrapheneOSFlasher",
+                    return_value=mock_flasher,
+                ):
+                    with patch(
+                        "grapheneos_flasher.cli.GrapheneOSFlasher.get_latest_release",
+                        return_value="2026050900",
+                    ):
+                        try:
+                            main()
+                        except SystemExit:
+                            pass
+        out = capsys.readouterr().out
+
+        assert "bundled copy" in out
+        assert "2026-07-28" in out
