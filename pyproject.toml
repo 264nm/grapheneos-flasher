@@ -77,6 +77,8 @@ addopts = "-ra -q --strict-markers --strict-config"
 markers = [
     "integration: integration tests that require network or system tools",
     "unit: unit tests that run in isolation",
+    "e2e: hermetic end-to-end tests driving the real CLI against a stub device harness",
+    "emulator: end-to-end tests requiring a booted Android emulator (adb)",
 ]
 
 [tool.coverage.run]

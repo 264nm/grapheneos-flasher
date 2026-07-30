@@ -2,13 +2,14 @@
 Core functionality for GrapheneOS Flasher
 """
 
+import os
 import subprocess
 import sys
 import time
 import urllib.error
 import urllib.request
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
 from xml.etree import ElementTree
@@ -45,7 +46,13 @@ class DownloadConfig:
 
     device: str
     version: str
-    base_url: str = "https://releases.grapheneos.org"
+    # GRAPHENEOS_FLASHER_BASE_URL supports mirrors and hermetic e2e tests.
+    base_url: str = field(
+        default_factory=lambda: os.environ.get(
+            "GRAPHENEOS_FLASHER_BASE_URL",
+            "https://releases.grapheneos.org",
+        )
+    )
 
     @property
     def install_url(self) -> str:
