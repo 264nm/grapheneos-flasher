@@ -81,7 +81,7 @@ jobs:
         run: uv build
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v3.0.0
+        uses: softprops/action-gh-release@v3.0.3
         with:
           # On a main push the tag does not exist yet; the release action
           # creates it at the triggering commit.
