@@ -195,7 +195,7 @@ For the authoritative list see
    in the working directory.
 2. **Verify** the signature with `ssh-keygen -Y verify`, exactly as the
    official guide prescribes.
-3. **Extract** the archive with `tar xf`.
+3. **Extract** the archive with Python's built-in `zipfile` (no `tar`/`bsdtar` needed).
 4. **Pre-flight checklist** — pauses and shows what to prepare on your device
    before you type `yes`.
 5. **Unlock** — checks `fastboot getvar unlocked`. If locked, sends

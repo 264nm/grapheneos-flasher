@@ -8,6 +8,7 @@ import sys
 import time
 import urllib.error
 import urllib.request
+import zipfile
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum
@@ -144,26 +145,24 @@ class DefaultFileHandler(FileHandler):
             return False
 
     def extract_archive(self, archive_path: Path, destination: Path) -> bool:
-        """Extract the factory image zip"""
+        """Extract the factory image zip.
+
+        Uses the stdlib zipfile module rather than an external tool: GNU tar
+        (the default on most Linux distros) cannot read zip archives.
+        """
         Instructions.info(f"Extracting {archive_path.name} …")
         try:
-            subprocess.run(
-                ["tar", "xf", str(archive_path)],
-                cwd=destination,
-                check=True,
-                capture_output=True,
-            )
+            with zipfile.ZipFile(archive_path) as zf:
+                for member in zf.infolist():
+                    extracted = Path(zf.extract(member, destination))
+                    # zipfile drops Unix permission bits; restore them
+                    mode = (member.external_attr >> 16) & 0o777
+                    if mode and not member.is_dir():
+                        extracted.chmod(mode)
             Instructions.ok(f"Extracted to: {destination}")
             return True
-        except subprocess.CalledProcessError as e:
-            Instructions.fail(
-                f"Extraction failed: {e.stderr.decode().strip() if e.stderr else e}"
-            )
-            return False
-        except FileNotFoundError:
-            Instructions.fail(
-                "'tar' not found — please install it and try again."
-            )
+        except (zipfile.BadZipFile, OSError) as e:
+            Instructions.fail(f"Extraction failed: {e}")
             return False
 
 
