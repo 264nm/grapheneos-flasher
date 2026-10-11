@@ -15,8 +15,8 @@ Two harnesses are wired up here:
 import os
 import subprocess
 import sys
-import tarfile
 import threading
+import zipfile
 from functools import partial
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 from pathlib import Path
@@ -62,17 +62,16 @@ def release_dir(tmp_path_factory) -> Path:
         f'contact@grapheneos.org namespaces="factory images" {pubkey}\n'
     )
 
-    # Factory image payload. core.py extracts with `tar xf`, so the
-    # archive is tar-format under its .zip name — both GNU tar and
-    # bsdtar auto-detect by content, keeping the fixture portable.
+    # Factory image payload, zipped like the real release.
     payload = root / f"{DEVICE}-install-{VERSION}"
     payload.mkdir()
     write_executable(payload / "flash-all.sh", FAKE_FLASH_ALL)
     (payload / "image-fake.zip").write_bytes(b"not a real image")
 
     archive = root / f"{DEVICE}-install-{VERSION}.zip"
-    with tarfile.open(archive, "w") as tar:
-        tar.add(payload, arcname=payload.name)
+    with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as zf:
+        for f in payload.iterdir():
+            zf.write(f, f"{payload.name}/{f.name}")
 
     subprocess.run(
         [
