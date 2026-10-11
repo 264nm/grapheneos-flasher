@@ -22,14 +22,20 @@ jobs:
       - name: Determine version and whether to release
         id: version
         run: |
+          VERSION=$(grep -Po '(?<=^__version__ = ")[^"]+' grapheneos_flasher/__init__.py)
+          TAG="v$VERSION"
           if [[ "$GITHUB_REF" == refs/tags/* ]]; then
-            # Manual tag push: always release under that tag.
-            echo "tag=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
+            # Manual tag push: release under that tag, but only if it
+            # matches __version__ — otherwise the build would publish the
+            # old version under a new tag and PyPI would reject it.
+            if [[ "${GITHUB_REF#refs/tags/}" != "$TAG" ]]; then
+              echo "::error::Tag ${GITHUB_REF#refs/tags/} does not match __version__ ($VERSION)."
+              exit 1
+            fi
+            echo "tag=$TAG" >> "$GITHUB_OUTPUT"
             echo "release=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          VERSION=$(grep -Po '(?<=^__version__ = ")[^"]+' grapheneos_flasher/__init__.py)
-          TAG="v$VERSION"
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           if git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null; then
             echo "Tag $TAG already exists — nothing to release."
@@ -87,7 +93,9 @@ jobs:
           # creates it at the triggering commit.
           tag_name: ${{ needs.check.outputs.tag }}
           target_commitish: ${{ github.sha }}
-          files: dist/*
+          files: |
+            dist/*.whl
+            dist/*.tar.gz
           generate_release_notes: true
           fail_on_unmatched_files: true
 
