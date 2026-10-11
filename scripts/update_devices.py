@@ -58,7 +58,7 @@ def update() -> int:
     # the scheduled workflow doesn't open a PR every week for nothing.
     try:
         existing = DeviceSupport.from_json(DATA_FILE.read_text())
-    except OSError, ValueError, KeyError:
+    except OSError, ValueError, KeyError, TypeError, AttributeError:
         existing = None
     if existing and replace(existing, generated=support.generated) == support:
         print(f"{DATA_FILE} is up to date")
