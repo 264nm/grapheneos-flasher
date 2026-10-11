@@ -43,3 +43,43 @@ jobs:
 
       - name: Lint
         run: uv run flake8 grapheneos_flasher tests
+
+  # End-to-end tests against a real Android device stack: a Pixel-profile
+  # AVD provides a genuine adb device. The flash pipeline itself is covered
+  # by the hermetic stub-harness e2e tests in the job above (an emulator
+  # has no bootloader, so fastboot can never see one).
+  e2e-emulator:
+    name: E2E (Pixel emulator)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6.0.2
+
+      - name: Enable KVM group perms
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - uses: actions/setup-java@v5.6.0
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v8.1.0
+        with:
+          python-version: "3.14"
+
+      - name: Install dependencies
+        run: uv sync --extra dev
+
+      - name: Run e2e tests on a Pixel AVD
+        uses: reactivecircus/android-emulator-runner@v2.38.0
+        with:
+          api-level: 34
+          arch: x86_64
+          profile: pixel_6
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
+          disable-animations: true
+          script: uv run python -m pytest tests/e2e -m emulator -v -rA

@@ -1,5 +1,13 @@
 version: "3"
 
+vars:
+  # Android SDK layout. Only platform-tools is typically on PATH, so the
+  # emulator tasks below invoke the other binaries by absolute path.
+  ANDROID_SDK: '{{.ANDROID_HOME | default (printf "%s/Library/Android/sdk" .HOME)}}'
+  AVD_NAME: pixel-e2e
+  # API 34, arm64 (Apple silicon). Swap the ABI for x86_64 hosts.
+  SYSTEM_IMAGE: system-images;android-34;google_apis;arm64-v8a
+
 tasks:
   # ── Individual steps (mirrors CI exactly) ────────────────────────────────────
 
@@ -10,6 +18,48 @@ tasks:
   test:
     desc: Run the test suite
     cmd: uv run python -m pytest --tb=short -q
+
+  test:e2e:
+    desc: Run hermetic e2e tests (real CLI against a stub device harness)
+    cmd: uv run python -m pytest tests/e2e -m e2e --tb=short -q
+
+  test:e2e:emulator:
+    desc: Run e2e tests against a booted Android emulator (requires adb)
+    cmd: uv run python -m pytest tests/e2e -m emulator -v -rA
+
+  # ── Emulator lifecycle (for test:e2e:emulator) ───────────────────────────────
+
+  emulator:setup:
+    desc: One-time — download the system image and create the Pixel AVD
+    status:
+      - test -d "$HOME/.android/avd/{{.AVD_NAME}}.avd"
+    cmds:
+      # sdkmanager/avdmanager need a JDK; Android Studio ships one.
+      - >-
+        JAVA_HOME="${JAVA_HOME:-/Applications/Android Studio.app/Contents/jbr/Contents/Home}"
+        {{.ANDROID_SDK}}/cmdline-tools/latest/bin/sdkmanager "{{.SYSTEM_IMAGE}}" emulator
+      - >-
+        JAVA_HOME="${JAVA_HOME:-/Applications/Android Studio.app/Contents/jbr/Contents/Home}"
+        {{.ANDROID_SDK}}/cmdline-tools/latest/bin/avdmanager create avd
+        -n {{.AVD_NAME}} -d pixel_6 -k "{{.SYSTEM_IMAGE}}"
+
+  emulator:start:
+    desc: Boot the Pixel AVD headless and wait until it is ready
+    deps: [emulator:setup]
+    cmds:
+      - >-
+        {{.ANDROID_SDK}}/emulator/emulator -avd {{.AVD_NAME}}
+        -no-window -no-audio -no-snapshot -no-boot-anim
+        > /tmp/{{.AVD_NAME}}.log 2>&1 &
+      - "{{.ANDROID_SDK}}/platform-tools/adb wait-for-device"
+      - >-
+        until [ "$({{.ANDROID_SDK}}/platform-tools/adb shell getprop sys.boot_completed | tr -d '\r')" = "1" ];
+        do sleep 2; done
+      - "{{.ANDROID_SDK}}/platform-tools/adb devices"
+
+  emulator:stop:
+    desc: Shut down the running emulator
+    cmd: "{{.ANDROID_SDK}}/platform-tools/adb emu kill || true"
 
   typecheck:
     desc: Run mypy type checking
