@@ -3,6 +3,7 @@ Unit tests for GrapheneOS Flasher core functionality
 """
 
 import tempfile
+import zipfile
 from pathlib import Path
 from unittest.mock import Mock, patch
 
@@ -118,6 +119,29 @@ class TestDefaultFileHandler:
                 )
             assert result is True
             mock_retrieve.assert_not_called()
+
+    def test_extract_archive_zip(self, tmp_path):
+        archive = tmp_path / "shiba-install-2026050900.zip"
+        with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr("shiba-install-2026050900/flash-all.sh", "#!/bin/sh\n")
+            zf.writestr("shiba-install-2026050900/boot.img", b"data")
+        assert DefaultFileHandler().extract_archive(archive, tmp_path) is True
+        script = tmp_path / "shiba-install-2026050900" / "flash-all.sh"
+        assert script.read_text() == "#!/bin/sh\n"
+
+    def test_extract_archive_rejects_non_zip(self, tmp_path):
+        archive = tmp_path / "bad.zip"
+        archive.write_bytes(b"not a zip")
+        assert DefaultFileHandler().extract_archive(archive, tmp_path) is False
+
+    def test_extract_archive_blocks_path_traversal(self, tmp_path):
+        dest = tmp_path / "out"
+        dest.mkdir()
+        archive = tmp_path / "evil.zip"
+        with zipfile.ZipFile(archive, "w") as zf:
+            zf.writestr("../escaped.txt", "x")
+        assert DefaultFileHandler().extract_archive(archive, dest) is True
+        assert not (tmp_path / "escaped.txt").exists()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
