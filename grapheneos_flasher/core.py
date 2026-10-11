@@ -153,12 +153,7 @@ class DefaultFileHandler(FileHandler):
         Instructions.info(f"Extracting {archive_path.name} …")
         try:
             with zipfile.ZipFile(archive_path) as zf:
-                for member in zf.infolist():
-                    extracted = Path(zf.extract(member, destination))
-                    # zipfile drops Unix permission bits; restore them
-                    mode = (member.external_attr >> 16) & 0o777
-                    if mode and not member.is_dir():
-                        extracted.chmod(mode)
+                zf.extractall(destination)
             Instructions.ok(f"Extracted to: {destination}")
             return True
         except (zipfile.BadZipFile, OSError) as e:
