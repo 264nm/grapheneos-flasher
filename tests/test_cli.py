@@ -74,6 +74,31 @@ class TestArgumentParsing:
         assert exc.value.code == 0
         assert __version__ in capsys.readouterr().out
 
+    @pytest.mark.parametrize(
+        "argv",
+        [
+            ["shiba", "--version", "2026050900", "--flash"],
+            ["shiba", "-V", "2026050900"],
+            ["shiba", "--vers", "2026050900"],
+            ["--version", "2026050900", "shiba"],
+        ],
+    )
+    def test_legacy_version_value_is_rejected(self, argv, capsys):
+        # action="version" would otherwise exit 0 before the leftover value
+        # is checked, so old scripts would "succeed" without flashing.
+        with patch.object(sys, "argv", ["grapheneos-flasher", *argv]):
+            with pytest.raises(SystemExit) as exc:
+                parse_args()
+        assert exc.value.code == 2
+        assert "--release 2026050900" in capsys.readouterr().err
+
+    def test_version_after_separator_is_positional(self):
+        with patch.object(
+            sys, "argv", ["grapheneos-flasher", "--", "--version"]
+        ):
+            args = parse_args()
+        assert args.device == "--version"
+
     def test_parse_args_with_work_dir(self):
         with patch.object(
             sys,
@@ -443,14 +468,25 @@ class TestDeviceSupportChecks:
         assert "end-of-life" not in out
         assert "not in the known device list" not in out
 
-    def test_unknown_device_still_warns(self, mock_flasher, support, capsys):
+    def test_unknown_device_aborts_before_download(
+        self, mock_flasher, support, capsys
+    ):
         code = _run_main(
             ["grapheneos-flasher", "notadevice"], mock_flasher, support=support
         )
         out = capsys.readouterr().out
 
-        assert code == 0
-        assert "not in the known device list" in out
+        assert code == 1
+        assert "not a supported GrapheneOS device" in out
+        mock_flasher.prepare_factory_image.assert_not_called()
+
+    def test_unknown_device_suggests_close_match(self, mock_flasher, capsys):
+        code = _run_main(["grapheneos-flasher", "cheeter"], mock_flasher)
+        out = capsys.readouterr().out
+
+        assert code == 1
+        assert "Did you mean: cheetah" in out
+        mock_flasher.prepare_factory_image.assert_not_called()
 
     def test_fallback_to_bundled_is_announced(
         self, mock_flasher, support, capsys
