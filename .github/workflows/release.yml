@@ -100,7 +100,7 @@ jobs:
           fail_on_unmatched_files: true
 
       - name: Upload dist for PyPI job
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7.0.2
         with:
           name: dist
           path: dist/
