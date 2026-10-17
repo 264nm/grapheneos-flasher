@@ -2,6 +2,7 @@
 Unit tests for device support data and EOL checking
 """
 
+import http.client
 import urllib.error
 from datetime import date
 from pathlib import Path
@@ -164,6 +165,11 @@ class TestFetchDeviceSupport:
     def test_returns_none_when_all_urls_fail(self):
         with patch("urllib.request.urlopen") as mock_open:
             mock_open.side_effect = urllib.error.URLError("offline")
+            assert fetch_device_support() is None
+
+    def test_returns_none_on_truncated_response(self):
+        with patch("urllib.request.urlopen") as mock_open:
+            mock_open.side_effect = http.client.IncompleteRead(b"partial")
             assert fetch_device_support() is None
 
     def test_returns_none_on_unparseable_markup(self):

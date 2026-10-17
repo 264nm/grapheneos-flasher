@@ -7,6 +7,7 @@ snapshot bundled with the package (data/devices.json, refreshed by CI).
 """
 
 import calendar
+import http.client
 import json
 import re
 import urllib.error
@@ -165,7 +166,12 @@ def fetch_device_support(timeout: float = 10.0) -> DeviceSupport | None:
             with urllib.request.urlopen(url, timeout=timeout) as response:
                 html = response.read().decode("utf-8")
             return parse_faq(html)
-        except urllib.error.URLError, ValueError, OSError:
+        except (
+            urllib.error.URLError,
+            http.client.HTTPException,
+            ValueError,
+            OSError,
+        ):
             continue
     return None
 

@@ -38,6 +38,7 @@ class FlashResult(Enum):
     NO_DEVICE = "no_device"
     NOT_IN_RECOVERY = "not_in_recovery"
     NOT_IN_SIDELOAD = "not_in_sideload"
+    SIDELOAD_UNVERIFIED = "sideload_unverified"
     CANCELLED = "cancelled"
 
 
@@ -592,55 +593,96 @@ class DeviceManager:
             return False
 
     @staticmethod
-    def check_sideload_mode() -> bool:
-        """Return True if a device is in ADB sideload mode (silent polling)."""
+    def get_adb_state() -> str | None:
+        """Return the adb state of the first attached device, e.g. 'device',
+        'sideload' or 'unauthorized', or None if nothing is attached."""
         try:
             result = subprocess.run(
                 ["adb", "devices"], capture_output=True, text=True
             )
-            return result.returncode == 0 and "sideload" in result.stdout
         except FileNotFoundError:
-            return False
+            return None
+        if result.returncode != 0:
+            return None
+        for line in result.stdout.splitlines()[1:]:
+            parts = line.split()
+            if len(parts) >= 2:
+                return parts[1]
+        return None
 
     @staticmethod
-    def sideload_update(ota_path: Path) -> FlashResult:
-        """Sideload a GrapheneOS OTA update package via adb"""
-        Instructions.block(Instructions.pre_sideload(ota_path.name))
+    def check_sideload_mode() -> bool:
+        """Return True if a device is in ADB sideload mode (silent polling)."""
+        return DeviceManager.get_adb_state() == "sideload"
 
-        response = (
-            input("  Device ready in sideload mode? Type 'yes' to start: ")
-            .strip()
-            .lower()
-        )
-        print()
-        if response not in ("yes", "y"):
+    @staticmethod
+    def get_build_version() -> str | None:
+        """Return the GrapheneOS release the booted device is running"""
+        try:
+            result = subprocess.run(
+                ["adb", "shell", "getprop", "ro.build.version.incremental"],
+                capture_output=True,
+                text=True,
+            )
+        except FileNotFoundError:
+            return None
+        version = result.stdout.strip()
+        return version if result.returncode == 0 and version else None
+
+    @staticmethod
+    def wait_for_adb_state(state: str, timeout: int) -> bool:
+        """Poll until the device reports the given adb state."""
+        for _ in range(timeout):
+            if DeviceManager.get_adb_state() == state:
+                return True
+            time.sleep(1)
+        return False
+
+    @staticmethod
+    def sideload_update(ota_path: Path, version: str) -> FlashResult:
+        """Sideload a GrapheneOS OTA update package via adb.
+
+        Success is judged by the booted device's build version afterwards:
+        adb exits 0 once the transfer completes even if recovery aborts the
+        install, and recovery reboots in auto-reboot mode regardless.
+        """
+        state = DeviceManager.get_adb_state()
+        auto_reboot = state == "device"
+
+        if state == "unauthorized":
+            Instructions.fail(
+                "Device is not authorized — accept the USB debugging prompt "
+                "on the device, then run again."
+            )
+            return FlashResult.NO_DEVICE
+
+        if auto_reboot:
+            current = DeviceManager.get_build_version()
+            if current == version:
+                Instructions.ok(f"Device is already on {version}")
+                return FlashResult.SUCCESS
             Instructions.info(
-                "Sideload cancelled. Run again when your device is ready."
+                f"Device is on {current or 'unknown version'} — "
+                "rebooting into sideload mode …"
             )
-            return FlashResult.CANCELLED
-
-        if not DeviceManager.check_sideload_mode():
+            subprocess.run(
+                ["adb", "reboot", "sideload-auto-reboot"], check=False
+            )
+            in_sideload = DeviceManager.wait_for_adb_state("sideload", 120)
+        elif state == "sideload":
+            in_sideload = True
+        else:
+            # No device, or one in another state (recovery, offline, …)
+            Instructions.block(Instructions.pre_sideload(ota_path.name))
             Instructions.info("Waiting for device to enter sideload mode …")
-            Instructions.block(
-                "  (Select 'Apply update from ADB' on your device if you haven't yet)"
-            )
+            in_sideload = DeviceManager.wait_for_adb_state("sideload", 300)
 
-            deadline = 60
-            for elapsed in range(deadline):
-                if DeviceManager.check_sideload_mode():
-                    Instructions.ok("Device is in sideload mode")
-                    break
-                if elapsed % 10 == 9:
-                    Instructions.info(
-                        f"Still waiting … {deadline - elapsed - 1}s remaining"
-                    )
-                time.sleep(1)
-            else:
-                Instructions.fail("Timed out waiting for sideload mode.")
-                Instructions.block(
-                    "  Select 'Apply update from ADB' on your device, then run again."
-                )
-                return FlashResult.NOT_IN_SIDELOAD
+        if not in_sideload:
+            Instructions.fail("Timed out waiting for sideload mode.")
+            Instructions.block(
+                "  Select 'Apply update from ADB' on your device, then run again."
+            )
+            return FlashResult.NOT_IN_SIDELOAD
 
         print()
         Instructions.info(
@@ -658,15 +700,38 @@ class DeviceManager:
             )
             return FlashResult.FAILED_SIDELOAD
 
-        if result.returncode == 0:
-            Instructions.block(Instructions.post_sideload)
-            return FlashResult.SUCCESS
+        if result.returncode != 0:
+            Instructions.fail(
+                "Sideload failed (adb returned a non-zero exit code)."
+            )
+            Instructions.block(Instructions.sideload_failure_help)
+            return FlashResult.FAILED_SIDELOAD
 
-        Instructions.fail(
-            "Sideload failed (adb returned a non-zero exit code)."
+        print()
+        if not auto_reboot:
+            Instructions.block(Instructions.sideload_reboot_prompt)
+        Instructions.info(
+            "Waiting for the device to boot to verify the install …"
         )
-        Instructions.block(Instructions.sideload_failure_help)
-        return FlashResult.FAILED_SIDELOAD
+        if not DeviceManager.wait_for_adb_state("device", 600):
+            Instructions.fail(
+                "Could not verify the install — device did not come back "
+                "over adb."
+            )
+            Instructions.block(Instructions.sideload_unverified(version))
+            return FlashResult.SIDELOAD_UNVERIFIED
+
+        installed = DeviceManager.get_build_version()
+        if installed != version:
+            Instructions.fail(
+                f"Install failed — device is still on {installed or 'an unknown version'}, "
+                f"expected {version}."
+            )
+            Instructions.block(Instructions.sideload_failure_help)
+            return FlashResult.FAILED_SIDELOAD
+
+        Instructions.block(Instructions.post_sideload(version))
+        return FlashResult.SUCCESS
 
 
 # ─────────────────────────────────────────────────────────────────────────────

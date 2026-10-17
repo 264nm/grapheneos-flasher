@@ -161,22 +161,38 @@ class Instructions:
     3. Press Power to confirm
 """
 
-    post_sideload = f"""
-{_H}
-  ✅  OTA update sideloaded successfully!
-{_H}
-
-  Next steps on your device:
-
-  1. Select 'Reboot system now' in the recovery menu
-  2. Wait for the device to boot into the updated GrapheneOS
+    sideload_reboot_prompt = """
+  Transfer finished. On the device, select 'Reboot system now'
+  so the install can be verified.
 """
+
+    @classmethod
+    def post_sideload(cls, version: str) -> str:
+        return "\n".join(
+            [
+                cls._H,
+                f"  ✅  OTA update installed — device is running {version}",
+                cls._H,
+            ]
+        )
+
+    @staticmethod
+    def sideload_unverified(version: str) -> str:
+        return (
+            "  If the device booted, check Settings → About phone → Build\n"
+            f"  number. It should read {version}; if not, the install was\n"
+            "  aborted.\n"
+            "\n"
+            "  If it fails to boot or reports corruption, the failed install\n"
+            "  damaged it. Reflash with --flash (this wipes all data)."
+        )
 
     sideload_failure_help = """
   Troubleshooting:
     • Make sure 'Apply update from ADB' is selected on the device
     • Try a different USB cable or port (no hubs)
     • Confirm the OTA package matches this exact device model
+    • If the device no longer boots, reflash with --flash (wipes data)
 """
 
     _managed_steps = (
@@ -247,7 +263,9 @@ class Instructions:
                 "  This pushes an OTA update to a device already running GrapheneOS.",
                 "  Your data will be preserved.",
                 "",
-                "  Prepare your device:",
+                "  Tip: with USB debugging enabled this happens automatically.",
+                "",
+                "  Otherwise, prepare your device:",
                 "",
                 "  1. Boot into Recovery Mode",
                 "     Power off → hold Volume Down + press Power"

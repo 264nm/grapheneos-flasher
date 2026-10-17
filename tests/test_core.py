@@ -428,37 +428,104 @@ class TestFlashDevice:
 # ─────────────────────────────────────────────────────────────────────────────
 
 
+OLD_BUILD = "old-build"
+NEW_BUILD = "new-build"
+
+
+class FakeAdb:
+    """Minimal adb state machine for subprocess.run patches."""
+
+    def __init__(self, state, version=OLD_BUILD, install_ok=True):
+        self.state = state
+        self.version = version
+        self.install_ok = install_ok
+        self.calls = []
+
+    def __call__(self, cmd, **kwargs):
+        self.calls.append(cmd)
+        if cmd == ["adb", "devices"]:
+            line = f"ABC\t{self.state}\n" if self.state else ""
+            return Mock(
+                returncode=0, stdout=f"List of devices attached\n{line}"
+            )
+        if cmd[:2] == ["adb", "shell"]:
+            return Mock(returncode=0, stdout=f"{self.version}\n")
+        if cmd == ["adb", "reboot", "sideload-auto-reboot"]:
+            self.state = "sideload"
+        elif cmd[:2] == ["adb", "sideload"]:
+            if self.install_ok:
+                self.version = NEW_BUILD
+            self.state = "device"  # recovery reboots either way
+        return Mock(returncode=0, stdout="")
+
+
+def _sideload(adb):
+    with patch("subprocess.run", side_effect=adb), patch("time.sleep"):
+        return DeviceManager.sideload_update(
+            Path("/fake/update.zip"), NEW_BUILD
+        )
+
+
 class TestSideload:
 
-    def test_sideload_user_cancelled(self):
-        with patch("builtins.input", return_value="no"):
-            result = DeviceManager.sideload_update(Path("/fake/update.zip"))
-        assert result == FlashResult.CANCELLED
+    def test_auto_reboot_success_verified_by_version(self):
+        adb = FakeAdb("device")
+        assert _sideload(adb) == FlashResult.SUCCESS
+        assert ["adb", "reboot", "sideload-auto-reboot"] in adb.calls
 
-    def test_sideload_timeout(self):
-        no_sideload = Mock(returncode=0, stdout="")
-        with patch("builtins.input", return_value="yes"):
-            with patch("subprocess.run", return_value=no_sideload):
-                with patch("time.sleep"):
-                    result = DeviceManager.sideload_update(
-                        Path("/fake/update.zip")
-                    )
-        assert result == FlashResult.NOT_IN_SIDELOAD
+    def test_aborted_install_detected_despite_adb_exit_zero(self):
+        adb = FakeAdb("device", install_ok=False)
+        assert _sideload(adb) == FlashResult.FAILED_SIDELOAD
+
+    def test_already_on_target_version(self):
+        adb = FakeAdb("device", version=NEW_BUILD)
+        assert _sideload(adb) == FlashResult.SUCCESS
+        assert not any(c[:2] == ["adb", "sideload"] for c in adb.calls)
+
+    def test_unknown_adb_state_waits_for_sideload(self):
+        assert _sideload(FakeAdb("recovery")) == FlashResult.NOT_IN_SIDELOAD
+
+    def test_unauthorized_device(self):
+        assert _sideload(FakeAdb("unauthorized")) == FlashResult.NO_DEVICE
+
+    def test_manual_sideload_mode_still_verifies(self):
+        assert _sideload(FakeAdb("sideload")) == FlashResult.SUCCESS
+
+    def test_timeout_waiting_for_sideload(self):
+        assert _sideload(FakeAdb(None)) == FlashResult.NOT_IN_SIDELOAD
+
+    def test_unverified_when_device_never_returns(self):
+        adb = FakeAdb("sideload")
+        real = adb.__call__
+
+        def stays_away(cmd, **kwargs):
+            out = real(cmd, **kwargs)
+            if cmd[:2] == ["adb", "sideload"]:
+                adb.state = None
+            return out
+
+        with (
+            patch("subprocess.run", side_effect=stays_away),
+            patch("time.sleep"),
+        ):
+            result = DeviceManager.sideload_update(
+                Path("/fake/update.zip"), NEW_BUILD
+            )
+        assert result == FlashResult.SIDELOAD_UNVERIFIED
 
     def test_sideload_adb_not_found(self):
-        # Device reports as in sideload mode, but 'adb sideload' binary is missing
-        in_sideload = Mock(returncode=0, stdout="ABC\tsideload")
+        adb = FakeAdb("sideload")
+        real = adb.__call__
 
-        def side_effect(cmd, **kwargs):
-            if cmd == ["adb", "sideload", "/fake/update.zip"]:
+        def missing(cmd, **kwargs):
+            if cmd[:2] == ["adb", "sideload"]:
                 raise FileNotFoundError
-            return in_sideload
+            return real(cmd, **kwargs)
 
-        with patch("builtins.input", return_value="yes"):
-            with patch("subprocess.run", side_effect=side_effect):
-                result = DeviceManager.sideload_update(
-                    Path("/fake/update.zip")
-                )
+        with patch("subprocess.run", side_effect=missing), patch("time.sleep"):
+            result = DeviceManager.sideload_update(
+                Path("/fake/update.zip"), NEW_BUILD
+            )
         assert result == FlashResult.FAILED_SIDELOAD
 
 
