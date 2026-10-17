@@ -179,8 +179,12 @@ class Instructions:
     @staticmethod
     def sideload_unverified(version: str) -> str:
         return (
-            "  Check Settings → About phone → Build number on the device.\n"
-            f"  It should read {version}; if not, the install was aborted."
+            "  If the device booted, check Settings → About phone → Build\n"
+            f"  number. It should read {version}; if not, the install was\n"
+            "  aborted.\n"
+            "\n"
+            "  If it fails to boot or reports corruption, the failed install\n"
+            "  damaged it. Reflash with --flash (this wipes all data)."
         )
 
     sideload_failure_help = """
@@ -188,9 +192,7 @@ class Instructions:
     • Make sure 'Apply update from ADB' is selected on the device
     • Try a different USB cable or port (no hubs)
     • Confirm the OTA package matches this exact device model
-    • Error 63 (kPostInstallMountError) going from Android 16 QPR2 to
-      Android 17: sideload the bridge release first (--release 2026061602)
-      https://discuss.grapheneos.org/d/37947
+    • If the device no longer boots, reflash with --flash (wipes data)
 """
 
     _managed_steps = (

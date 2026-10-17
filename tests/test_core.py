@@ -474,6 +474,9 @@ class TestSideload:
         assert _sideload(adb) == FlashResult.SUCCESS
         assert not any(c[:2] == ["adb", "sideload"] for c in adb.calls)
 
+    def test_unknown_adb_state_waits_for_sideload(self):
+        assert _sideload(FakeAdb("recovery")) == FlashResult.NOT_IN_SIDELOAD
+
     def test_unauthorized_device(self):
         assert _sideload(FakeAdb("unauthorized")) == FlashResult.NO_DEVICE
 

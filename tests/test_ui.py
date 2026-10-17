@@ -136,6 +136,9 @@ class TestStaticBlocks:
     def test_post_sideload_names_version(self):
         assert "2026100600" in Instructions.post_sideload("2026100600")
 
+    def test_sideload_unverified_mentions_reflash(self):
+        assert "--flash" in Instructions.sideload_unverified("2026100600")
+
     def test_sideload_reboot_prompt_mentions_reboot(self):
         assert "Reboot system now" in Instructions.sideload_reboot_prompt
 

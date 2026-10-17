@@ -672,6 +672,7 @@ class DeviceManager:
         elif state == "sideload":
             in_sideload = True
         else:
+            # No device, or one in another state (recovery, offline, …)
             Instructions.block(Instructions.pre_sideload(ota_path.name))
             Instructions.info("Waiting for device to enter sideload mode …")
             in_sideload = DeviceManager.wait_for_adb_state("sideload", 300)
@@ -713,7 +714,7 @@ class DeviceManager:
         if not DeviceManager.wait_for_adb_state("device", 600):
             Instructions.fail(
                 "Could not verify the install — device did not come back "
-                "over adb (is USB debugging enabled?)."
+                "over adb."
             )
             Instructions.block(Instructions.sideload_unverified(version))
             return FlashResult.SIDELOAD_UNVERIFIED
