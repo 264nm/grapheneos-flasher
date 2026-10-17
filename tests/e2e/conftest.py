@@ -117,10 +117,12 @@ def fake_device(tmp_path: Path) -> FakeDevice:
         bin_dir=bin_dir,
         state_file=tmp_path / "bootloader_state",
         adb_state_file=tmp_path / "adb_state",
+        adb_version_file=tmp_path / "adb_version",
         log_file=tmp_path / "tool_calls.log",
     )
     device.set_bootloader_state("locked")
     device.set_adb_mode("device")
+    device.set_build_version("2026050900")
     return device
 
 
@@ -136,12 +138,17 @@ def run_cli(fake_device: FakeDevice, release_server: str, work_dir: Path):
     """Run the real CLI as a subprocess against both harnesses."""
 
     def _run(
-        *args: str, answers: str = "", timeout: int = 120
+        *args: str,
+        answers: str = "",
+        timeout: int = 120,
+        extra_env: dict[str, str] | None = None,
     ) -> subprocess.CompletedProcess[str]:
         env = os.environ.copy()
+        env.update(extra_env or {})
         env["PATH"] = f"{fake_device.bin_dir}{os.pathsep}{env['PATH']}"
         env["FAKE_DEVICE_STATE"] = str(fake_device.state_file)
         env["FAKE_ADB_STATE"] = str(fake_device.adb_state_file)
+        env["FAKE_ADB_VERSION"] = str(fake_device.adb_version_file)
         env["FAKE_TOOL_LOG"] = str(fake_device.log_file)
         env["GRAPHENEOS_FLASHER_BASE_URL"] = release_server
         return subprocess.run(

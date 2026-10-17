@@ -133,8 +133,11 @@ class TestStaticBlocks:
     def test_lock_prompt_has_steps(self):
         assert "Lock the bootloader" in Instructions.lock_prompt
 
-    def test_post_sideload_mentions_reboot(self):
-        assert "Reboot system now" in Instructions.post_sideload
+    def test_post_sideload_names_version(self):
+        assert "2026100600" in Instructions.post_sideload("2026100600")
+
+    def test_sideload_reboot_prompt_mentions_reboot(self):
+        assert "Reboot system now" in Instructions.sideload_reboot_prompt
 
     def test_sideload_failure_help_has_tips(self):
         assert "Apply update from ADB" in Instructions.sideload_failure_help

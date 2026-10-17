@@ -367,7 +367,7 @@ def main() -> None:
         Instructions.step(2, 2, "Sideloading")
 
         result = flasher.device_manager.sideload_update(
-            flasher.work_dir / config.ota_filename
+            flasher.work_dir / config.ota_filename, config.version
         )
         sys.exit(
             0 if result in (FlashResult.SUCCESS, FlashResult.CANCELLED) else 1

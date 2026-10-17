@@ -66,12 +66,26 @@ FAKE_ADB = textwrap.dedent("""\
         echo "List of devices attached"
         printf 'FAKESERIAL\\t%s\\n' "$(cat "$FAKE_ADB_STATE")"
         ;;
+      reboot)
+        [ "${2:-}" = "sideload-auto-reboot" ] && echo sideload > "$FAKE_ADB_STATE"
+        ;;
+      shell)
+        # shell getprop ro.build.version.incremental
+        cat "$FAKE_ADB_VERSION"
+        ;;
       sideload)
         if [ ! -f "${2:-}" ]; then
           echo "adb: sideload requires an existing file" >&2
           exit 1
         fi
         echo "Total xfer: 1.00x"
+        # Like real recovery, adb exits 0 even when the install aborts;
+        # only the version after reboot reveals the outcome.
+        if [ -z "${FAKE_SIDELOAD_FAIL:-}" ]; then
+          v="${2##*-ota_update-}"
+          echo "${v%.zip}" > "$FAKE_ADB_VERSION"
+        fi
+        echo device > "$FAKE_ADB_STATE"
         ;;
     esac
     exit 0
@@ -102,6 +116,7 @@ class FakeDevice:
     bin_dir: Path
     state_file: Path
     adb_state_file: Path
+    adb_version_file: Path
     log_file: Path
 
     @property
@@ -119,3 +134,14 @@ class FakeDevice:
 
     def set_adb_mode(self, mode: str) -> None:
         self.adb_state_file.write_text(f"{mode}\n")
+
+    @property
+    def adb_mode(self) -> str:
+        return self.adb_state_file.read_text().strip()
+
+    @property
+    def build_version(self) -> str:
+        return self.adb_version_file.read_text().strip()
+
+    def set_build_version(self, version: str) -> None:
+        self.adb_version_file.write_text(f"{version}\n")

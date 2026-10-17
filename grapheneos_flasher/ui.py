@@ -161,22 +161,36 @@ class Instructions:
     3. Press Power to confirm
 """
 
-    post_sideload = f"""
-{_H}
-  ✅  OTA update sideloaded successfully!
-{_H}
-
-  Next steps on your device:
-
-  1. Select 'Reboot system now' in the recovery menu
-  2. Wait for the device to boot into the updated GrapheneOS
+    sideload_reboot_prompt = """
+  Transfer finished. On the device, select 'Reboot system now'
+  so the install can be verified.
 """
+
+    @classmethod
+    def post_sideload(cls, version: str) -> str:
+        return "\n".join(
+            [
+                cls._H,
+                f"  ✅  OTA update installed — device is running {version}",
+                cls._H,
+            ]
+        )
+
+    @staticmethod
+    def sideload_unverified(version: str) -> str:
+        return (
+            "  Check Settings → About phone → Build number on the device.\n"
+            f"  It should read {version}; if not, the install was aborted."
+        )
 
     sideload_failure_help = """
   Troubleshooting:
     • Make sure 'Apply update from ADB' is selected on the device
     • Try a different USB cable or port (no hubs)
     • Confirm the OTA package matches this exact device model
+    • Error 63 (kPostInstallMountError) going from Android 16 QPR2 to
+      Android 17: sideload the bridge release first (--release 2026061602)
+      https://discuss.grapheneos.org/d/37947
 """
 
     _managed_steps = (
@@ -247,7 +261,9 @@ class Instructions:
                 "  This pushes an OTA update to a device already running GrapheneOS.",
                 "  Your data will be preserved.",
                 "",
-                "  Prepare your device:",
+                "  Tip: with USB debugging enabled this happens automatically.",
+                "",
+                "  Otherwise, prepare your device:",
                 "",
                 "  1. Boot into Recovery Mode",
                 "     Power off → hold Volume Down + press Power"

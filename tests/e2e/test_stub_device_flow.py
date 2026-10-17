@@ -113,14 +113,37 @@ class TestFlashFlow:
 
 class TestSideloadFlow:
 
-    def test_sideload_ota_update(self, run_cli, fake_device: FakeDevice):
-        fake_device.set_adb_mode("sideload")
-
-        result = run_cli(DEVICE, "--sideload", answers="yes\n")
+    def test_auto_reboot_sideload_verifies_version(
+        self, run_cli, fake_device: FakeDevice
+    ):
+        result = run_cli(DEVICE, "--sideload")
 
         assert result.returncode == 0, result.stdout + result.stderr
+        assert "adb reboot sideload-auto-reboot" in fake_device.calls
         ota = f"{DEVICE}-ota_update-{VERSION}.zip"
         assert any(
             call.startswith("adb sideload") and ota in call
             for call in fake_device.calls
         )
+        assert fake_device.build_version == VERSION
+
+    def test_aborted_install_is_reported_as_failure(
+        self, run_cli, fake_device: FakeDevice
+    ):
+        result = run_cli(
+            DEVICE, "--sideload", extra_env={"FAKE_SIDELOAD_FAIL": "1"}
+        )
+
+        assert result.returncode == 1
+        assert "installed" not in result.stdout
+        assert "still on 2026050900" in result.stdout
+
+    def test_already_on_target_version_skips_sideload(
+        self, run_cli, fake_device: FakeDevice
+    ):
+        fake_device.set_build_version(VERSION)
+
+        result = run_cli(DEVICE, "--sideload")
+
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert not any(c.startswith("adb sideload") for c in fake_device.calls)
