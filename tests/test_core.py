@@ -445,7 +445,9 @@ class FakeAdb:
         self.calls.append(cmd)
         if cmd == ["adb", "devices"]:
             line = f"ABC\t{self.state}\n" if self.state else ""
-            return Mock(returncode=0, stdout=f"List of devices attached\n{line}")
+            return Mock(
+                returncode=0, stdout=f"List of devices attached\n{line}"
+            )
         if cmd[:2] == ["adb", "shell"]:
             return Mock(returncode=0, stdout=f"{self.version}\n")
         if cmd == ["adb", "reboot", "sideload-auto-reboot"]:
@@ -459,7 +461,9 @@ class FakeAdb:
 
 def _sideload(adb):
     with patch("subprocess.run", side_effect=adb), patch("time.sleep"):
-        return DeviceManager.sideload_update(Path("/fake/update.zip"), NEW_BUILD)
+        return DeviceManager.sideload_update(
+            Path("/fake/update.zip"), NEW_BUILD
+        )
 
 
 class TestSideload:
@@ -500,7 +504,10 @@ class TestSideload:
                 adb.state = None
             return out
 
-        with patch("subprocess.run", side_effect=stays_away), patch("time.sleep"):
+        with (
+            patch("subprocess.run", side_effect=stays_away),
+            patch("time.sleep"),
+        ):
             result = DeviceManager.sideload_update(
                 Path("/fake/update.zip"), NEW_BUILD
             )

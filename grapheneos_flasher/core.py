@@ -710,7 +710,9 @@ class DeviceManager:
         print()
         if not auto_reboot:
             Instructions.block(Instructions.sideload_reboot_prompt)
-        Instructions.info("Waiting for the device to boot to verify the install …")
+        Instructions.info(
+            "Waiting for the device to boot to verify the install …"
+        )
         if not DeviceManager.wait_for_adb_state("device", 600):
             Instructions.fail(
                 "Could not verify the install — device did not come back "
