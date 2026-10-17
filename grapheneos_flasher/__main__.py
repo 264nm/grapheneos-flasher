@@ -2,7 +2,7 @@
 Main module for direct package execution
 
 Usage:
-    python -m grapheneos_flasher <device> [--flash] [--version VERSION]
+    python -m grapheneos_flasher <device> [--flash] [--release RELEASE]
 """
 
 from grapheneos_flasher.cli import main

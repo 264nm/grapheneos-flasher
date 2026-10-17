@@ -89,7 +89,7 @@ examples:
   grapheneos-flasher shiba --flash
       Download, verify, and flash GrapheneOS onto a Pixel 8
 
-  grapheneos-flasher shiba --version 2026050900 --flash
+  grapheneos-flasher shiba --release 2026050900 --flash
       Flash a specific GrapheneOS version
 
   grapheneos-flasher shiba --sideload
@@ -102,6 +102,13 @@ supported devices:
 """,
     )
 
+    parser.add_argument(
+        "-V",
+        "--version",
+        action="version",
+        version=f"%(prog)s {__version__}",
+        help="Print the grapheneos-flasher version and exit",
+    )
     parser.add_argument(
         "device",
         help="Device codename (e.g. shiba, husky, oriole)",
@@ -120,8 +127,8 @@ supported devices:
     )
 
     parser.add_argument(
-        "--version",
-        metavar="VERSION",
+        "--release",
+        metavar="RELEASE",
         help="Specific release to use, e.g. 2026050900 (default: latest)",
     )
     parser.add_argument(
@@ -290,8 +297,8 @@ def main() -> None:
         check_prerequisites(args.flash, args.sideload)
 
     # ── Resolve version ───────────────────────────────────────────────────────
-    if args.version:
-        version = args.version
+    if args.release:
+        version = args.release
         Instructions.info(f"Using specified version: {version}")
     else:
         version = GrapheneOSFlasher.get_latest_release()

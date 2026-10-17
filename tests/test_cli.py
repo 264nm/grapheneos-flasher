@@ -26,7 +26,7 @@ class TestArgumentParsing:
         assert args.device == "shiba"
         assert args.flash is False
         assert args.sideload is False
-        assert args.version is None
+        assert args.release is None
         assert args.work_dir is None
         assert args.bootloader_mgmt is True
 
@@ -59,10 +59,20 @@ class TestArgumentParsing:
         with patch.object(
             sys,
             "argv",
-            ["grapheneos-flasher", "shiba", "--version", "2026050900"],
+            ["grapheneos-flasher", "shiba", "--release", "2026050900"],
         ):
             args = parse_args()
-        assert args.version == "2026050900"
+        assert args.release == "2026050900"
+
+    @pytest.mark.parametrize("flag", ["-V", "--version"])
+    def test_version_prints_and_exits(self, flag, capsys):
+        from grapheneos_flasher import __version__
+
+        with patch.object(sys, "argv", ["grapheneos-flasher", flag]):
+            with pytest.raises(SystemExit) as exc:
+                parse_args()
+        assert exc.value.code == 0
+        assert __version__ in capsys.readouterr().out
 
     def test_parse_args_with_work_dir(self):
         with patch.object(

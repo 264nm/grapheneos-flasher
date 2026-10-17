@@ -717,7 +717,7 @@ class GrapheneOSFlasher:
             Instructions.fail(f"Could not reach grapheneos.org: {e.reason}")
             Instructions.block(
                 "  Check your internet connection and try again.\n"
-                "  You can specify a version manually with --version <version>."
+                "  You can specify a version manually with --release <release>."
             )
             sys.exit(1)
         except ValueError as e:

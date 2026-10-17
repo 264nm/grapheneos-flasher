@@ -150,7 +150,7 @@ def run_cli(fake_device: FakeDevice, release_server: str, work_dir: Path):
                 "-m",
                 "grapheneos_flasher",
                 *args,
-                "--version",
+                "--release",
                 VERSION,
                 "--work-dir",
                 str(work_dir),

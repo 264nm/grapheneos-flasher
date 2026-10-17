@@ -86,7 +86,7 @@ the bootloader is unlocked before proceeding.
 ### Flash a specific version
 
 ```bash
-uv run grapheneos-flasher shiba --version 2026050900 --flash
+uv run grapheneos-flasher shiba --release 2026050900 --flash
 ```
 
 ### Sideload an OTA update (updates an existing GrapheneOS install, preserves data)
