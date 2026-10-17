@@ -617,7 +617,7 @@ class DeviceManager:
 
     @staticmethod
     def get_build_version() -> str | None:
-        """Return the GrapheneOS release of the booted device, e.g. 2026100600"""
+        """Return the GrapheneOS release the booted device is running"""
         try:
             result = subprocess.run(
                 ["adb", "shell", "getprop", "ro.build.version.incremental"],

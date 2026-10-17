@@ -428,10 +428,14 @@ class TestFlashDevice:
 # ─────────────────────────────────────────────────────────────────────────────
 
 
+OLD_BUILD = "old-build"
+NEW_BUILD = "new-build"
+
+
 class FakeAdb:
     """Minimal adb state machine for subprocess.run patches."""
 
-    def __init__(self, state, version="2026050900", install_ok=True):
+    def __init__(self, state, version=OLD_BUILD, install_ok=True):
         self.state = state
         self.version = version
         self.install_ok = install_ok
@@ -448,14 +452,14 @@ class FakeAdb:
             self.state = "sideload"
         elif cmd[:2] == ["adb", "sideload"]:
             if self.install_ok:
-                self.version = "2026100600"
+                self.version = NEW_BUILD
             self.state = "device"  # recovery reboots either way
         return Mock(returncode=0, stdout="")
 
 
 def _sideload(adb):
     with patch("subprocess.run", side_effect=adb), patch("time.sleep"):
-        return DeviceManager.sideload_update(Path("/fake/update.zip"), "2026100600")
+        return DeviceManager.sideload_update(Path("/fake/update.zip"), NEW_BUILD)
 
 
 class TestSideload:
@@ -470,7 +474,7 @@ class TestSideload:
         assert _sideload(adb) == FlashResult.FAILED_SIDELOAD
 
     def test_already_on_target_version(self):
-        adb = FakeAdb("device", version="2026100600")
+        adb = FakeAdb("device", version=NEW_BUILD)
         assert _sideload(adb) == FlashResult.SUCCESS
         assert not any(c[:2] == ["adb", "sideload"] for c in adb.calls)
 
@@ -498,7 +502,7 @@ class TestSideload:
 
         with patch("subprocess.run", side_effect=stays_away), patch("time.sleep"):
             result = DeviceManager.sideload_update(
-                Path("/fake/update.zip"), "2026100600"
+                Path("/fake/update.zip"), NEW_BUILD
             )
         assert result == FlashResult.SIDELOAD_UNVERIFIED
 
@@ -513,7 +517,7 @@ class TestSideload:
 
         with patch("subprocess.run", side_effect=missing), patch("time.sleep"):
             result = DeviceManager.sideload_update(
-                Path("/fake/update.zip"), "2026100600"
+                Path("/fake/update.zip"), NEW_BUILD
             )
         assert result == FlashResult.FAILED_SIDELOAD
 

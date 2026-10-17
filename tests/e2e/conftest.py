@@ -122,7 +122,7 @@ def fake_device(tmp_path: Path) -> FakeDevice:
     )
     device.set_bootloader_state("locked")
     device.set_adb_mode("device")
-    device.set_build_version("2026050900")
+    device.set_build_version("old-build")
     return device
 
 

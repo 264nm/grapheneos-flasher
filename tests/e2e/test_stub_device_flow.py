@@ -136,7 +136,7 @@ class TestSideloadFlow:
 
         assert result.returncode == 1
         assert "installed" not in result.stdout
-        assert "still on 2026050900" in result.stdout
+        assert "still on old-build" in result.stdout
 
     def test_already_on_target_version_skips_sideload(
         self, run_cli, fake_device: FakeDevice
