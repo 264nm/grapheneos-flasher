@@ -7,6 +7,6 @@ verification, and flashing of GrapheneOS images.
 
 from grapheneos_flasher.core import GrapheneOSFlasher
 
-__version__ = "0.5.1"
+__version__ = "0.6.0"
 __author__ = "264nm <c.j.ward264nm@gmail.com>"
 __all__ = ["GrapheneOSFlasher"]

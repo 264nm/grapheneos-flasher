@@ -3,8 +3,10 @@ Command-line interface for GrapheneOS Flasher
 """
 
 import argparse
+import difflib
 import sys
 import tempfile
+from collections.abc import Sequence
 from enum import StrEnum
 from pathlib import Path
 
@@ -62,13 +64,54 @@ DEVICE_TABLE = "\n".join(
 # ─────────────────────────────────────────────────────────────────────────────
 
 
+class _Parser(argparse.ArgumentParser):
+    """ArgumentParser that rejects the pre-0.6 ``--version <release>`` form."""
+
+    def parse_known_args(  # type: ignore[override]
+        self,
+        args: Sequence[str] | None = None,
+        namespace: argparse.Namespace | None = None,
+    ) -> tuple[argparse.Namespace, list[str]]:
+        argv = sys.argv[1:] if args is None else list(args)
+        _reject_legacy_version(self, argv)
+        return super().parse_known_args(argv, namespace)
+
+
+def _is_version_flag(token: str) -> bool:
+    # argparse accepts unambiguous prefixes (--vers), so match those too.
+    return token == "-V" or (len(token) > 2 and "--version".startswith(token))
+
+
+def _reject_legacy_version(
+    parser: argparse.ArgumentParser, argv: list[str]
+) -> None:
+    """
+    Fail on ``--version <value>``, which used to select a release.
+
+    action="version" exits 0 as soon as it is seen, before leftover
+    arguments are checked, so ``shiba --version 2026050900 --flash`` would
+    print the tool version and report success without flashing anything.
+    """
+    for i, token in enumerate(argv):
+        if token == "--":
+            return
+        if not _is_version_flag(token):
+            continue
+        value = argv[i + 1] if i + 1 < len(argv) else None
+        if value is not None and not value.startswith("-"):
+            parser.error(
+                f"{token} takes no value (got '{value}'). "
+                f"To select a release, use --release {value}"
+            )
+
+
 def parse_args() -> argparse.Namespace:
     """Parse and return CLI arguments (convenience wrapper used by tests)."""
     return build_parser().parse_args()
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
+    parser = _Parser(
         prog="grapheneos-flasher",
         description=(
             "Download, verify, and flash GrapheneOS factory images.\n"
@@ -89,7 +132,7 @@ examples:
   grapheneos-flasher shiba --flash
       Download, verify, and flash GrapheneOS onto a Pixel 8
 
-  grapheneos-flasher shiba --version 2026050900 --flash
+  grapheneos-flasher shiba --release 2026050900 --flash
       Flash a specific GrapheneOS version
 
   grapheneos-flasher shiba --sideload
@@ -102,6 +145,13 @@ supported devices:
 """,
     )
 
+    parser.add_argument(
+        "-V",
+        "--version",
+        action="version",
+        version=f"%(prog)s {__version__}",
+        help="Print the grapheneos-flasher version and exit",
+    )
     parser.add_argument(
         "device",
         help="Device codename (e.g. shiba, husky, oriole)",
@@ -120,8 +170,8 @@ supported devices:
     )
 
     parser.add_argument(
-        "--version",
-        metavar="VERSION",
+        "--release",
+        metavar="RELEASE",
         help="Specific release to use, e.g. 2026050900 (default: latest)",
     )
     parser.add_argument(
@@ -159,25 +209,26 @@ def validate_device(device: str) -> bool:
     return len(device) >= 3 and device.isalpha() and device.islower()
 
 
-def warn_unknown_device(device: str) -> None:
-    """Print a non-fatal warning when the codename isn't in the Device enum."""
-    if Device.from_codename(device) is None:
-        Instructions.warn(f"'{device}' is not in the known device list.")
-        Instructions.block(
-            "     If you're sure this is correct, the download will tell you.\n"
-            "     Check supported devices:"
-            " https://grapheneos.org/faq#device-support"
-        )
-        print()
+def fail_unknown_device(device: str, known: set[str]) -> None:
+    """Exit before downloading when the codename isn't a supported device."""
+    Instructions.fail(f"'{device}' is not a supported GrapheneOS device.")
+    suggestions = difflib.get_close_matches(device, sorted(known), n=3)
+    if suggestions:
+        Instructions.block(f"     Did you mean: {', '.join(suggestions)}?")
+    Instructions.block(
+        "     Run grapheneos-flasher --help for the device list, or see:\n"
+        "     https://grapheneos.org/faq#device-support"
+    )
+    sys.exit(1)
 
 
 def check_device_support(device: str) -> None:
     """
     Check the device against GrapheneOS support data.
 
-    Exits with an error for end-of-life devices, warns when OEM support
-    ends soon, and falls back to the bundled snapshot when the live data
-    cannot be fetched.
+    Exits with an error for unknown and end-of-life devices, warns when OEM
+    support ends soon, and falls back to the bundled snapshot when the live
+    data cannot be fetched.
     """
     support, is_live = get_device_support()
 
@@ -209,7 +260,7 @@ def check_device_support(device: str) -> None:
         print()
 
     if device not in support.supported:
-        warn_unknown_device(device)
+        fail_unknown_device(device, set(support.supported))
 
 
 def resolve_work_dir(specified: Path | None) -> Path:
@@ -290,8 +341,8 @@ def main() -> None:
         check_prerequisites(args.flash, args.sideload)
 
     # ── Resolve version ───────────────────────────────────────────────────────
-    if args.version:
-        version = args.version
+    if args.release:
+        version = args.release
         Instructions.info(f"Using specified version: {version}")
     else:
         version = GrapheneOSFlasher.get_latest_release()
